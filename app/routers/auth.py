@@ -1,17 +1,23 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from datetime import timedelta
+from datetime import timedelta, datetime, timezone
 
 from app.database import get_db
 from app.models import User
-from app.schemas import UserCreate, UserResponse, Token
+from app.schemas import UserCreate, UserResponse, Token, TokenRefreshRequest
 from app.auth import (
     get_password_hash,
     verify_password,
     create_access_token,
+    create_refresh_token,
+    save_refresh_token,
+    verify_refresh_token,
+    revoke_refresh_token,
+    revoke_all_user_tokens,
     get_current_user,
-    ACCESS_TOKEN_EXPIRE_MINUTES
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    REFRESH_TOKEN_EXPIRE_DAYS
 )
 
 router = APIRouter()
@@ -59,7 +65,7 @@ def login(
         db: Session = Depends(get_db)
 ):
     """
-    로그인 (JWT 토큰 발급)
+    로그인 (JWT Access Token + Refresh Token 발급)
     - username 필드에 email 또는 username을 입력
     """
     # 이메일 또는 사용자명으로 사용자 찾기
@@ -74,14 +80,95 @@ def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # JWT 토큰 생성
+    # Access Token 생성 (15분)
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"user_id": user.id, "email": user.email},
         expires_delta=access_token_expires
     )
 
-    return {"access_token": access_token, "token_type": "bearer"}
+    # Refresh Token 생성 (7일)
+    refresh_token_expires = timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    refresh_token = create_refresh_token(
+        data={"user_id": user.id},
+        expires_delta=refresh_token_expires
+    )
+
+    # Refresh Token을 데이터베이스에 저장
+    expires_at = datetime.now(timezone.utc) + refresh_token_expires
+    save_refresh_token(db, user.id, refresh_token, expires_at)
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer"
+    }
+
+
+@router.post("/refresh", response_model=Token)
+def refresh_access_token(
+        token_request: TokenRefreshRequest,
+        db: Session = Depends(get_db)
+):
+    """
+    Refresh Token을 사용하여 새로운 Access Token 발급
+    - Refresh Token도 갱신됨 (Token Rotation)
+    """
+    # Refresh Token 검증
+    db_token = verify_refresh_token(db, token_request.refresh_token)
+
+    # 기존 Refresh Token 무효화 (Token Rotation)
+    db_token.revoked = True
+    db.commit()
+
+    # 새로운 Access Token 생성 (15분)
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    new_access_token = create_access_token(
+        data={"user_id": db_token.user_id, "email": db_token.owner.email},
+        expires_delta=access_token_expires
+    )
+
+    # 새로운 Refresh Token 생성 (7일)
+    refresh_token_expires = timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    new_refresh_token = create_refresh_token(
+        data={"user_id": db_token.user_id},
+        expires_delta=refresh_token_expires
+    )
+
+    # 새 Refresh Token을 데이터베이스에 저장
+    expires_at = datetime.now(timezone.utc) + refresh_token_expires
+    save_refresh_token(db, db_token.user_id, new_refresh_token, expires_at)
+
+    return {
+        "access_token": new_access_token,
+        "refresh_token": new_refresh_token,
+        "token_type": "bearer"
+    }
+
+
+@router.post("/logout")
+def logout(
+        token_request: TokenRefreshRequest,
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
+    """
+    로그아웃 (Refresh Token 무효화)
+    """
+    revoke_refresh_token(db, token_request.refresh_token)
+    return {"message": "Successfully logged out"}
+
+
+@router.post("/logout-all")
+def logout_all_devices(
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
+    """
+    모든 기기에서 로그아웃 (사용자의 모든 Refresh Token 무효화)
+    """
+    revoke_all_user_tokens(db, current_user.id)
+    return {"message": "Successfully logged out from all devices"}
 
 
 @router.get("/me", response_model=UserResponse)

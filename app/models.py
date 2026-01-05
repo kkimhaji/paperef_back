@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Table
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Table, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database import Base
@@ -22,6 +22,20 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     papers = relationship("Paper", back_populates="owner", cascade="all, delete-orphan")
+    refresh_tokens = relationship("RefreshToken", back_populates="owner", cascade="all, delete-orphan")
+
+
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    token = Column(String(500), unique=True, index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete='CASCADE'), nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    revoked = Column(Boolean, default=False)
+
+    owner = relationship("User", back_populates="refresh_tokens")
 
 
 class Paper(Base):
@@ -29,8 +43,8 @@ class Paper(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String(255), index=True, nullable=False)
-    summary = Column(Text)  # 카드뷰에 표시될 간단한 메모
-    content = Column(Text)  # 상세 페이지에 표시될 본문
+    summary = Column(Text)
+    content = Column(Text)
     user_id = Column(Integer, ForeignKey("users.id", ondelete='CASCADE'), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
