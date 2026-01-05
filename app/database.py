@@ -8,7 +8,7 @@ load_dotenv()
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://postgres:postgres@localhost:5432/paper_memo_db"
+    "postgresql://postgres:postgres@localhost:5432/paperef_db"
 )
 
 engine = create_engine(DATABASE_URL)
