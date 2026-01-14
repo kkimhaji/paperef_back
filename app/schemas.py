@@ -81,6 +81,7 @@ class PaperListResponse(BaseModel):
     id: int
     title: str
     summary: Optional[str] = None
+    user_id: int
     created_at: datetime
     updated_at: datetime
     hashtags: list[HashtagResponse] = []
