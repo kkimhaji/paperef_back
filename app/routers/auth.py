@@ -15,10 +15,10 @@ from app.auth import (
     verify_refresh_token,
     revoke_refresh_token,
     revoke_all_user_tokens,
-    get_current_user,
     ACCESS_TOKEN_EXPIRE_MINUTES,
     REFRESH_TOKEN_EXPIRE_DAYS
 )
+from app.dependencies import get_current_user
 
 router = APIRouter()
 
@@ -172,7 +172,7 @@ def logout_all_devices(
 
 
 @router.get("/me", response_model=UserResponse)
-def read_users_me(current_user: User = Depends(get_current_user)):
+async def get_me(current_user: User = Depends(get_current_user)):
     """
     현재 로그인한 사용자 정보 조회
     """
