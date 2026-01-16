@@ -3,9 +3,9 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from app.database import get_db
-from app.models import User, Paper, Hashtag
+from app.models import User, Paper, Hashtag, Group
 from app.schemas import PaperCreate, PaperUpdate, PaperResponse, PaperListResponse
-from app.auth import get_current_user
+from app.dependencies import get_current_user
 
 router = APIRouter()
 
@@ -34,11 +34,21 @@ def create_paper(
     새로운 논문 메모 생성
     """
     # 논문 생성
+    # 그룹 확인
+    if paper_data.group_id:
+        group = db.query(Group).filter(
+            Group.id == paper_data.group_id,
+            Group.user_id == current_user.id
+        ).first()
+        if not group:
+            raise HTTPException(status_code=404, detail="Group not found")
+
     new_paper = Paper(
         title=paper_data.title,
         summary=paper_data.summary,
         content=paper_data.content,
-        user_id=current_user.id
+        user_id=current_user.id,
+        group_id=paper_data.group_id
     )
 
     # 해시태그 처리
@@ -59,15 +69,24 @@ def get_papers(
         skip: int = Query(0, ge=0),
         limit: int = Query(10, ge=1, le=100),
         hashtag: Optional[str] = Query(None, description="Filter by hashtag"),
+        group_id: Optional[int] = Query(None, description="Filter by group"),
         current_user: User = Depends(get_current_user),
         db: Session = Depends(get_db)
 ):
     """
     현재 사용자의 논문 메모 목록 조회
     - hashtag 파라미터로 필터링 가능
+    - group_id 파라미터로 그룹별 필터링 가능
     """
     query = db.query(Paper).filter(Paper.user_id == current_user.id)
-
+    # 그룹 필터링
+    if group_id is not None:
+        if group_id == 0:
+            # group_id=0이면 그룹에 속하지 않은 논문들만
+            query = query.filter(Paper.group_id == None)
+        else:
+            # 특정 그룹에 속한 논문들
+            query = query.filter(Paper.group_id == group_id)
     # 해시태그 필터링
     if hashtag:
         hashtag = hashtag.strip().lower()
@@ -121,6 +140,16 @@ def update_paper(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Paper not found"
         )
+    # 그룹 확인
+    if paper_data.group_id is not None:
+        if paper_data.group_id > 0:
+            group = db.query(Group).filter(
+                Group.id == paper_data.group_id,
+                Group.user_id == current_user.id
+            ).first()
+            if not group:
+                raise HTTPException(status_code=404, detail="Group not found")
+        paper.group_id = paper_data.group_id if paper_data.group_id > 0 else None
 
     # 필드 업데이트
     if paper_data.title is not None:
@@ -167,18 +196,3 @@ def delete_paper(
     db.commit()
 
     return None
-
-
-@router.get("/hashtags/all", response_model=list[str])
-def get_user_hashtags(
-        current_user: User = Depends(get_current_user),
-        db: Session = Depends(get_db)
-):
-    """
-    현재 사용자가 사용한 모든 해시태그 조회
-    """
-    hashtags = db.query(Hashtag).join(Paper.hashtags).filter(
-        Paper.user_id == current_user.id
-    ).distinct().all()
-
-    return [hashtag.name for hashtag in hashtags]

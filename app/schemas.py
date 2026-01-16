@@ -38,6 +38,41 @@ class TokenData(BaseModel):
     token_type: Optional[str] = "access"
 
 
+# Group Schemas
+class GroupBase(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    description: Optional[str] = None
+
+
+class GroupCreate(GroupBase):
+    pass
+
+
+class GroupUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    description: Optional[str] = None
+
+
+class GroupResponse(GroupBase):
+    id: int
+    user_id: int
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class GroupWithPaperCount(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    paper_count: int
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 # Hashtag Schemas
 class HashtagBase(BaseModel):
     name: str = Field(min_length=1, max_length=50)
@@ -57,6 +92,7 @@ class PaperBase(BaseModel):
 
 
 class PaperCreate(PaperBase):
+    group_id: Optional[int] = None
     hashtags: Optional[list[str]] = []
 
 
@@ -64,12 +100,14 @@ class PaperUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=1, max_length=255)
     summary: Optional[str] = None
     content: Optional[str] = None
+    group_id: Optional[int] = None
     hashtags: Optional[list[str]] = None
 
 
 class PaperResponse(PaperBase):
     id: int
     user_id: int
+    group_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
     hashtags: list[HashtagResponse] = []
@@ -82,6 +120,7 @@ class PaperListResponse(BaseModel):
     title: str
     summary: Optional[str] = None
     user_id: int
+    group_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
     hashtags: list[HashtagResponse] = []

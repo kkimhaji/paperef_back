@@ -23,6 +23,7 @@ class User(Base):
 
     papers = relationship("Paper", back_populates="owner", cascade="all, delete-orphan")
     refresh_tokens = relationship("RefreshToken", back_populates="owner", cascade="all, delete-orphan")
+    groups = relationship("Group", back_populates="owner", cascade="all, delete-orphan")
 
 
 class RefreshToken(Base):
@@ -46,10 +47,12 @@ class Paper(Base):
     summary = Column(Text)
     content = Column(Text)
     user_id = Column(Integer, ForeignKey("users.id", ondelete='CASCADE'), nullable=False)
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete='SET NULL'), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     owner = relationship("User", back_populates="papers")
+    group = relationship("Group", back_populates="papers")
     hashtags = relationship(
         "Hashtag",
         secondary=paper_hashtags,
@@ -68,3 +71,16 @@ class Hashtag(Base):
         secondary=paper_hashtags,
         back_populates="hashtags"
     )
+
+class Group(Base):
+    __tablename__ = "groups"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete='CASCADE'), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    owner = relationship("User", back_populates="groups")
+    papers = relationship("Paper", back_populates="group")
