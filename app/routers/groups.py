@@ -4,7 +4,7 @@ from typing import Optional
 
 from app.database import get_db
 from app.models import User, Group
-from app.schemas import GroupCreate, GroupUpdate, GroupResponse, GroupWithPaperCount
+from app.schemas import GroupCreate, GroupUpdate, GroupResponse, GroupWithRefCount
 from app.dependencies import get_current_user
 
 router = APIRouter()
@@ -41,7 +41,7 @@ def create_group(
     return new_group
 
 
-@router.get("/", response_model=list[GroupWithPaperCount])
+@router.get("/", response_model=list[GroupWithRefCount])
 def get_groups(
         current_user: User = Depends(get_current_user),
         db: Session = Depends(get_db)
@@ -57,7 +57,7 @@ def get_groups(
             "id": group.id,
             "name": group.name,
             "description": group.description,
-            "paper_count": len(group.papers),
+            "ref_count": len(group.refs),
             "created_at": group.created_at,
             "updated_at": group.updated_at
         })

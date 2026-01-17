@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import User, Hashtag, Paper
+from app.models import User, Hashtag, Ref
 from app.dependencies import get_current_user
 
 router = APIRouter()
@@ -16,8 +16,8 @@ def get_user_hashtags(
     """
     현재 사용자가 사용한 모든 해시태그 조회
     """
-    hashtags = db.query(Hashtag).join(Paper.hashtags).filter(
-        Paper.user_id == current_user.id
+    hashtags = db.query(Hashtag).join(Ref.hashtags).filter(
+        Ref.user_id == current_user.id
     ).distinct().all()
 
     return [hashtag.name for hashtag in hashtags]

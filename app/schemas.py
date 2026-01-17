@@ -62,11 +62,11 @@ class GroupResponse(GroupBase):
     model_config = ConfigDict(from_attributes=True)
 
 
-class GroupWithPaperCount(BaseModel):
+class GroupWithRefCount(BaseModel):
     id: int
     name: str
     description: Optional[str] = None
-    paper_count: int
+    ref_count: int
     created_at: datetime
     updated_at: datetime
 
@@ -84,19 +84,19 @@ class HashtagResponse(HashtagBase):
     model_config = ConfigDict(from_attributes=True)
 
 
-# Paper Schemas
-class PaperBase(BaseModel):
+# Ref Schemas
+class RefBase(BaseModel):
     title: str = Field(min_length=1, max_length=255)
     summary: Optional[str] = None
     content: Optional[str] = None
 
 
-class PaperCreate(PaperBase):
+class RefCreate(RefBase):
     group_id: Optional[int] = None
     hashtags: Optional[list[str]] = []
 
 
-class PaperUpdate(BaseModel):
+class RefUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=1, max_length=255)
     summary: Optional[str] = None
     content: Optional[str] = None
@@ -104,7 +104,7 @@ class PaperUpdate(BaseModel):
     hashtags: Optional[list[str]] = None
 
 
-class PaperResponse(PaperBase):
+class RefResponse(RefBase):
     id: int
     user_id: int
     group_id: Optional[int] = None
@@ -115,7 +115,7 @@ class PaperResponse(PaperBase):
     model_config = ConfigDict(from_attributes=True)
 
 
-class PaperListResponse(BaseModel):
+class RefListResponse(BaseModel):
     id: int
     title: str
     summary: Optional[str] = None
