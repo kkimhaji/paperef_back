@@ -79,8 +79,10 @@ class Group(Base):
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete='CASCADE'), nullable=False)
+    parent_id = Column(Integer, ForeignKey("groups.id", ondelete='CASCADE'), nullable=True)  # 추가
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     owner = relationship("User", back_populates="groups")
     refs = relationship("Ref", back_populates="group")
+    parent = relationship("Group", remote_side=[id], backref="children")  # 추가

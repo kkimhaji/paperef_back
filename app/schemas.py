@@ -45,17 +45,17 @@ class GroupBase(BaseModel):
 
 
 class GroupCreate(GroupBase):
-    pass
-
+    parent_id: Optional[int] = None
 
 class GroupUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = None
-
+    parent_id: Optional[int] = None
 
 class GroupResponse(GroupBase):
     id: int
     user_id: int
+    parent_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 
@@ -66,7 +66,9 @@ class GroupWithRefCount(BaseModel):
     id: int
     name: str
     description: Optional[str] = None
+    parent_id: Optional[int] = None
     ref_count: int
+    children_count: int
     created_at: datetime
     updated_at: datetime
 
