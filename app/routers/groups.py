@@ -53,10 +53,11 @@ def create_group(
 
     return new_group
 
+
 @router.get("/", response_model=list[GroupWithRefCount])
 def get_groups(
-        parent_id: Optional[int] = None,  # None이면 루트 그룹만, 특정 ID면 해당 그룹의 자식들
-        include_nested: bool = False,  # True면 모든 그룹 flat하게 반환
+        parent_id: Optional[int] = None,
+        include_nested: bool = False,  # 이미 구현되어 있음
         current_user: User = Depends(get_current_user),
         db: Session = Depends(get_db)
 ):
@@ -90,6 +91,7 @@ def get_groups(
         })
 
     return result
+
 
 @router.get("/{group_id}", response_model=GroupResponse)
 def get_group(
@@ -142,6 +144,7 @@ def get_groups_tree(
         return tree
 
     return build_tree()
+
 
 @router.put("/{group_id}", response_model=GroupResponse)
 def update_group(
