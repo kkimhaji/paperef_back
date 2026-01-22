@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Table, Boolean
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timedelta
 from app.database import Base
 
 # 논문과 해시태그의 다대다 관계 테이블
@@ -86,3 +86,17 @@ class Group(Base):
     owner = relationship("User", back_populates="groups")
     refs = relationship("Ref", back_populates="group")
     parent = relationship("Group", remote_side=[id], backref="children")  # 추가
+
+# 기존 모델들 아래에 추가
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(255), nullable=False, index=True)
+    token = Column(String(500), unique=True, index=True, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    def is_valid(self):
+        return not self.used and datetime.utcnow() < self.expires_at

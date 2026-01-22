@@ -47,10 +47,12 @@ class GroupBase(BaseModel):
 class GroupCreate(GroupBase):
     parent_id: Optional[int] = None
 
+
 class GroupUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = None
     parent_id: Optional[int] = None
+
 
 class GroupResponse(GroupBase):
     id: int
@@ -128,3 +130,13 @@ class RefListResponse(BaseModel):
     hashtags: list[HashtagResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# 비밀번호 재설정 스키마 추가
+class PasswordResetRequest(BaseModel):
+    email: str = Field(pattern=r'^[\w\.-]+@[\w\.-]+\.\w+$')
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str = Field(min_length=6)
