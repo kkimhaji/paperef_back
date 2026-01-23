@@ -112,12 +112,12 @@ class RefResponse(RefBase):
     id: int
     user_id: int
     group_id: Optional[int] = None
+    group_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     hashtags: list[HashtagResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
-
 
 class RefListResponse(BaseModel):
     id: int
@@ -125,6 +125,7 @@ class RefListResponse(BaseModel):
     summary: Optional[str] = None
     user_id: int
     group_id: Optional[int] = None
+    group_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     hashtags: list[HashtagResponse] = []

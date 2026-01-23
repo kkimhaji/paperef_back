@@ -58,6 +58,10 @@ class Ref(Base):
         secondary=ref_hashtags,
         back_populates="refs"
     )
+    @property
+    def group_name(self):
+        """그룹 이름을 반환하는 속성"""
+        return self.group.name if self.group else None
 
 
 class Hashtag(Base):
@@ -79,13 +83,13 @@ class Group(Base):
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete='CASCADE'), nullable=False)
-    parent_id = Column(Integer, ForeignKey("groups.id", ondelete='CASCADE'), nullable=True)  # 추가
+    parent_id = Column(Integer, ForeignKey("groups.id", ondelete='CASCADE'), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     owner = relationship("User", back_populates="groups")
     refs = relationship("Ref", back_populates="group")
-    parent = relationship("Group", remote_side=[id], backref="children")  # 추가
+    parent = relationship("Group", remote_side=[id], backref="children")
 
 # 기존 모델들 아래에 추가
 class PasswordResetToken(Base):
