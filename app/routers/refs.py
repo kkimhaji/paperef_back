@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import Optional
 
 from app.database import get_db
@@ -70,6 +70,7 @@ def get_refs(
         limit: int = Query(10, ge=1, le=100),
         hashtag: Optional[str] = Query(None, description="Filter by hashtag"),
         group_id: Optional[int] = Query(None, description="Filter by group"),
+        search: Optional[str] = Query(None, description="Search in title, summary, and content"),
         current_user: User = Depends(get_current_user),
         db: Session = Depends(get_db)
 ):
@@ -77,8 +78,16 @@ def get_refs(
     현재 사용자의 논문 메모 목록 조회
     - hashtag 파라미터로 필터링 가능
     - group_id 파라미터로 그룹별 필터링 가능
+    - search 파라미터로 제목, 요약, 내용 검색 가능
     """
-    query = db.query(Ref).filter(Ref.user_id == current_user.id)
+
+    # Eager loading으로 group을 미리 로드
+    query = db.query(Ref).options(
+        joinedload(Ref.group),
+        joinedload(Ref.hashtags)
+    ).filter(Ref.user_id == current_user.id)
+
+    # query = db.query(Ref).filter(Ref.user_id == current_user.id)
     # 그룹 필터링
     if group_id is not None:
         if group_id == 0:
@@ -92,6 +101,14 @@ def get_refs(
         hashtag = hashtag.strip().lower()
         query = query.join(Ref.hashtags).filter(Hashtag.name == hashtag)
 
+    # 검색 기능
+    if search:
+        search_pattern = f"%{search}%"
+        query = query.filter(
+            (Ref.title.ilike(search_pattern)) |
+            (Ref.summary.ilike(search_pattern)) |
+            (Ref.content.ilike(search_pattern))
+        )
     refs = query.order_by(Ref.updated_at.desc()).offset(skip).limit(limit).all()
 
     return refs
