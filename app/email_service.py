@@ -19,7 +19,7 @@ async def send_password_reset_email(email: str, reset_token: str):
     """
     비밀번호 재설정 이메일 전송
     """
-    reset_link = f"{FRONTEND_URL}/reset-password?token={reset_token}"
+    reset_link = f"{FRONTEND_URL}/#/reset-password?token={reset_token}"
 
     subject = "Password Reset Request - Paperef"
 
