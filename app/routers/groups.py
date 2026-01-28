@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from app.database import get_db
-from app.models import User, Group
+from app.models import User, Group, Ref
 from app.schemas import GroupCreate, GroupUpdate, GroupResponse, GroupWithRefCount
 from app.dependencies import get_current_user
 
@@ -245,21 +245,36 @@ def get_group_path(
 @router.delete("/{group_id}", status_code=204)
 def delete_group(
         group_id: int,
+        delete_refs: bool = Query(False,
+                                  description="If true, delete all refs in this group. If false, set refs to ungrouped."),
         current_user: User = Depends(get_current_user),
-        db: Session = Depends(get_db)
+        db: Session = Depends(get_db),
 ):
     """
-    그룹 삭제 (자식 그룹들과 레퍼런스들의 group_id는 NULL로 설정됨)
+    그룹 삭제
+
+    Parameters:
+    - group_id: 삭제할 그룹 ID
+    - delete_refs: True이면 그룹 내 레퍼런스도 삭제, False이면 ungrouped로 변경
     """
     group = db.query(Group).filter(
         Group.id == group_id,
-        Group.user_id == current_user.id
+        Group.user_id == current_user.id,
     ).first()
-
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
 
+    # 레퍼런스 처리
+    if delete_refs:
+        # 그룹 내 모든 레퍼런스 삭제
+        db.query(Ref).filter(Ref.group_id == group_id).delete(synchronize_session=False)
+    else:
+        # 그룹 내 레퍼런스를 ungrouped로 변경 (group_id를 NULL로)
+        db.query(Ref).filter(Ref.group_id == group_id).update(
+            {"group_id": None}, synchronize_session=False
+        )
+
+    # 그룹 삭제 (CASCADE로 하위 그룹도 자동 삭제됨)
     db.delete(group)
     db.commit()
-
     return None
