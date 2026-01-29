@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import Optional
+from typing import Optional, List
 
 from app.database import get_db
 from app.models import User, Group, Ref
@@ -265,6 +265,47 @@ def get_all_descendant_group_ids(db: Session, group_id: int) -> List[int]:
     return group_ids
 
 
+def delete_group_tree(db: Session, group_id: int, delete_refs: bool) -> int:
+    """
+    그룹과 모든 하위 그룹을 재귀적으로 삭제 (깊이 우선 탐색)
+
+    Args:
+        db: 데이터베이스 세션
+        group_id: 삭제할 그룹 ID
+        delete_refs: True이면 레퍼런스 삭제, False이면 ungrouped로 변경
+
+    Returns:
+        int: 삭제된 그룹 수
+    """
+    deleted_count = 0
+
+    # 먼저 자식 그룹들을 재귀적으로 삭제 (깊이 우선)
+    children = db.query(Group).filter(Group.parent_id == group_id).all()
+    for child in children:
+        deleted_count += delete_group_tree(db, child.id, delete_refs)
+
+    # 현재 그룹의 레퍼런스 처리
+    if delete_refs:
+        # 레퍼런스 삭제
+        refs_deleted = db.query(Ref).filter(Ref.group_id == group_id).delete(synchronize_session=False)
+        print(f"  Deleted {refs_deleted} refs from group {group_id}")
+    else:
+        # 레퍼런스를 ungrouped로 변경
+        refs_moved = db.query(Ref).filter(Ref.group_id == group_id).update(
+            {"group_id": None},
+            synchronize_session=False
+        )
+        print(f"  Moved {refs_moved} refs to ungrouped from group {group_id}")
+
+    # 현재 그룹 삭제
+    group = db.query(Group).filter(Group.id == group_id).first()
+    if group:
+        db.delete(group)
+        deleted_count += 1
+        print(f"  Deleted group {group_id} ({group.name})")
+
+    return deleted_count
+
 @router.delete("/{group_id}", status_code=204)
 def delete_group(
         group_id: int,
@@ -290,29 +331,9 @@ def delete_group(
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
 
-    # 모든 하위 그룹 ID 수집 (자신 포함)
-    all_group_ids = get_all_descendant_group_ids(db, group_id)
+    deleted_count = delete_group_tree(db, group_id, delete_refs)
+    print(f"=== Deleted {deleted_count} group(s) successfully ===\n")
 
-    print(f"Deleting group {group_id} and descendants: {all_group_ids}")
-
-    # 레퍼런스 처리 (모든 하위 그룹 포함)
-    if delete_refs:
-        # 모든 하위 그룹의 레퍼런스 삭제
-        deleted_count = db.query(Ref).filter(
-            Ref.group_id.in_(all_group_ids)
-        ).delete(synchronize_session=False)
-        print(f"Deleted {deleted_count} references from groups {all_group_ids}")
-    else:
-        # 모든 하위 그룹의 레퍼런스를 ungrouped로 변경
-        updated_count = db.query(Ref).filter(
-            Ref.group_id.in_(all_group_ids)
-        ).update(
-            {"group_id": None},
-            synchronize_session=False
-        )
-        print(f"Moved {updated_count} references to ungrouped from groups {all_group_ids}")
-
-    # 그룹 삭제 (CASCADE로 하위 그룹도 자동 삭제됨)
-    db.delete(group)
+    # 변경사항 커밋
     db.commit()
     return None
