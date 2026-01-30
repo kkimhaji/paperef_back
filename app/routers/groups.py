@@ -242,40 +242,86 @@ def get_group_path(
     return path
 
 
-def get_all_descendant_group_ids(db: Session, group_id: int) -> List[int]:
+def count_total_refs_in_tree(db: Session, group_id: int) -> int:
     """
-    재귀적으로 모든 하위 그룹의 ID를 수집
+    그룹과 모든 하위 그룹의 레퍼런스 총 개수 계산
 
     Args:
         db: 데이터베이스 세션
-        group_id: 시작 그룹 ID
+        group_id: 그룹 ID
 
     Returns:
-        List[int]: 해당 그룹과 모든 하위 그룹의 ID 리스트
+        int: 전체 레퍼런스 개수
+    """
+    # 현재 그룹의 레퍼런스 개수
+    total_refs = db.query(Ref).filter(Ref.group_id == group_id).count()
+
+    # 자식 그룹들의 레퍼런스 개수를 재귀적으로 더함
+    children = db.query(Group).filter(Group.parent_id == group_id).all()
+    for child in children:
+        total_refs += count_total_refs_in_tree(db, child.id)
+
+    return total_refs
+
+
+@router.get("/{group_id}/ref-count")
+def get_group_ref_count(
+        group_id: int,
+        include_subgroups: bool = Query(True, description="Include references in all subgroups"),
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db),
+):
+    """
+    그룹의 레퍼런스 개수 조회 (서브그룹 포함 가능)
+
+    Parameters:
+    - group_id: 그룹 ID
+    - include_subgroups: True이면 모든 하위 그룹의 레퍼런스도 포함
+
+    Returns:
+    - ref_count: 레퍼런스 개수
+    - has_subgroups: 하위 그룹 존재 여부
+    """
+    # 그룹 존재 및 권한 확인
+    group = db.query(Group).filter(
+        Group.id == group_id,
+        Group.user_id == current_user.id,
+    ).first()
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    if include_subgroups:
+        # 모든 하위 그룹 포함
+        ref_count = count_total_refs_in_tree(db, group_id)
+    else:
+        # 현재 그룹만
+        ref_count = db.query(Ref).filter(Ref.group_id == group_id).count()
+
+    # 하위 그룹 존재 여부
+    has_subgroups = db.query(Group).filter(Group.parent_id == group_id).count() > 0
+
+    return {
+        "ref_count": ref_count,
+        "has_subgroups": has_subgroups,
+        "group_id": group_id,
+        "group_name": group.name,
+    }
+
+
+def get_all_descendant_group_ids(db: Session, group_id: int) -> List[int]:
+    """
+    재귀적으로 모든 하위 그룹의 ID를 수집
     """
     group_ids = [group_id]
-
-    # 직접 자식 그룹 조회
     children = db.query(Group).filter(Group.parent_id == group_id).all()
-
-    # 재귀적으로 각 자식의 하위 그룹 ID 수집
     for child in children:
         group_ids.extend(get_all_descendant_group_ids(db, child.id))
-
     return group_ids
 
 
 def delete_group_tree(db: Session, group_id: int, delete_refs: bool) -> int:
     """
     그룹과 모든 하위 그룹을 재귀적으로 삭제 (깊이 우선 탐색)
-
-    Args:
-        db: 데이터베이스 세션
-        group_id: 삭제할 그룹 ID
-        delete_refs: True이면 레퍼런스 삭제, False이면 ungrouped로 변경
-
-    Returns:
-        int: 삭제된 그룹 수
     """
     deleted_count = 0
 
@@ -286,16 +332,16 @@ def delete_group_tree(db: Session, group_id: int, delete_refs: bool) -> int:
 
     # 현재 그룹의 레퍼런스 처리
     if delete_refs:
-        # 레퍼런스 삭제
         refs_deleted = db.query(Ref).filter(Ref.group_id == group_id).delete(synchronize_session=False)
-        print(f"  Deleted {refs_deleted} refs from group {group_id}")
+        if refs_deleted > 0:
+            print(f"  Deleted {refs_deleted} refs from group {group_id}")
     else:
-        # 레퍼런스를 ungrouped로 변경
         refs_moved = db.query(Ref).filter(Ref.group_id == group_id).update(
             {"group_id": None},
             synchronize_session=False
         )
-        print(f"  Moved {refs_moved} refs to ungrouped from group {group_id}")
+        if refs_moved > 0:
+            print(f"  Moved {refs_moved} refs to ungrouped from group {group_id}")
 
     # 현재 그룹 삭제
     group = db.query(Group).filter(Group.id == group_id).first()
@@ -305,6 +351,7 @@ def delete_group_tree(db: Session, group_id: int, delete_refs: bool) -> int:
         print(f"  Deleted group {group_id} ({group.name})")
 
     return deleted_count
+
 
 @router.delete("/{group_id}", status_code=204)
 def delete_group(
@@ -317,12 +364,7 @@ def delete_group(
         db: Session = Depends(get_db),
 ):
     """
-    그룹 삭제
-
-    Parameters:
-    - group_id: 삭제할 그룹 ID
-    - delete_refs: True이면 그룹 및 모든 하위 그룹의 레퍼런스 삭제,
-                   False이면 모든 레퍼런스를 ungrouped로 변경
+    그룹 삭제 (모든 하위 그룹과 레퍼런스 포함)
     """
     group = db.query(Group).filter(
         Group.id == group_id,
@@ -331,9 +373,15 @@ def delete_group(
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
 
+    print(f"\n=== Deleting group '{group.name}' (ID: {group_id}) ===")
+    print(f"Delete refs: {delete_refs}")
+
+    # 재귀적으로 그룹 트리 삭제 (하위 그룹부터 삭제)
     deleted_count = delete_group_tree(db, group_id, delete_refs)
-    print(f"=== Deleted {deleted_count} group(s) successfully ===\n")
 
     # 변경사항 커밋
     db.commit()
+
+    print(f"=== Deleted {deleted_count} group(s) successfully ===\n")
+
     return None
