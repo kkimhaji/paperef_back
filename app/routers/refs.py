@@ -115,7 +115,6 @@ def get_refs(
             if include_subgroups:
                 # 하위 그룹 포함: 모든 하위 그룹 ID 수집
                 all_group_ids = get_all_descendant_group_ids(db, group_id)
-                print(f"Including refs from groups: {all_group_ids}")
                 query = query.filter(Ref.group_id.in_(all_group_ids))
             else:
                 # 현재 그룹만
