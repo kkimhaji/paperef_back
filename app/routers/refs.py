@@ -43,6 +43,27 @@ def get_all_descendant_group_ids(db: Session, group_id: int) -> List[int]:
 
     return group_ids
 
+
+def get_group_path(db: Session, group_id: int) -> str:
+    """그룹의 전체 경로를 '/' 구분자로 반환
+
+    예시:
+    - Root Group -> "Root Group"
+    - Sub Group (parent: Root Group) -> "Root Group / Sub Group"
+    - Deep Group (parent: Sub Group) -> "Root Group / Sub Group / Deep Group"
+    """
+    path_parts = []
+    current = db.query(Group).filter(Group.id == group_id).first()
+
+    while current:
+        path_parts.insert(0, current.name)
+        if current.parent_id:
+            current = db.query(Group).filter(Group.id == current.parent_id).first()
+        else:
+            current = None
+
+    return " / ".join(path_parts)
+
 @router.post("/", response_model=RefResponse, status_code=status.HTTP_201_CREATED)
 def create_ref(
         ref_data: RefCreate,
@@ -90,42 +111,26 @@ def get_refs(
         current_user: User = Depends(get_current_user),
         db: Session = Depends(get_db),
 ):
-    """
-    레퍼런스 목록 조회
-
-    Parameters:
-    - hashtag: 해시태그로 필터링
-    - group_id: 그룹으로 필터링 (기본적으로 하위 그룹 포함)
-    - search: 제목, 요약, 내용에서 검색
-    - include_subgroups: True이면 하위 그룹의 레퍼런스도 포함 (기본값: True)
-    """
-    # 기본 쿼리
+    """레퍼런스 목록 조회 (그룹 경로 포함)"""
     query = db.query(Ref).options(
         joinedload(Ref.group),
         joinedload(Ref.hashtags)
     ).filter(Ref.user_id == current_user.id)
 
-    # 그룹 필터
     if group_id is not None:
         if group_id == 0:
-            # Ungrouped: group_id가 NULL인 레퍼런스만
             query = query.filter(Ref.group_id == None)
         else:
-            # 특정 그룹
             if include_subgroups:
-                # 하위 그룹 포함: 모든 하위 그룹 ID 수집
                 all_group_ids = get_all_descendant_group_ids(db, group_id)
                 query = query.filter(Ref.group_id.in_(all_group_ids))
             else:
-                # 현재 그룹만
                 query = query.filter(Ref.group_id == group_id)
 
-    # 해시태그 필터
     if hashtag:
         hashtag = hashtag.strip().lower()
         query = query.join(Ref.hashtags).filter(Hashtag.name == hashtag)
 
-    # 검색 필터
     if search:
         search_pattern = f"%{search}%"
         query = query.filter(
@@ -134,9 +139,25 @@ def get_refs(
             (Ref.content.ilike(search_pattern))
         )
 
-    # 정렬 및 페이지네이션
     refs = query.order_by(Ref.updated_at.desc()).offset(skip).limit(limit).all()
-    return refs
+
+    # 그룹 경로를 포함한 응답 생성
+    result = []
+    for ref in refs:
+        ref_dict = {
+            "id": ref.id,
+            "title": ref.title,
+            "summary": ref.summary,
+            "user_id": ref.user_id,
+            "group_id": ref.group_id,
+            "group_name": get_group_path(db, ref.group_id) if ref.group_id else None,
+            "created_at": ref.created_at,
+            "updated_at": ref.updated_at,
+            "hashtags": ref.hashtags,
+        }
+        result.append(ref_dict)
+
+    return result
 
 
 @router.get("/{ref_id}", response_model=RefResponse)
@@ -145,16 +166,21 @@ def get_ref(
         current_user: User = Depends(get_current_user),
         db: Session = Depends(get_db),
 ):
-    """특정 레퍼런스 조회"""
-    ref = db.query(Ref).filter(
+    """특정 레퍼런스 조회 (그룹 경로 포함)"""
+    ref = db.query(Ref).options(
+        joinedload(Ref.group),
+        joinedload(Ref.hashtags)
+    ).filter(
         Ref.id == ref_id,
         Ref.user_id == current_user.id,
     ).first()
+
     if not ref:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Ref not found"
         )
+
     return ref
 
 
