@@ -141,3 +141,38 @@ class PasswordResetRequest(BaseModel):
 class PasswordResetConfirm(BaseModel):
     token: str
     new_password: str = Field(min_length=6)
+
+
+class PasswordChangeRequest(BaseModel):
+    """비밀번호 변경 요청"""
+    current_password: str = Field(..., min_length=6)
+    new_password: str = Field(..., min_length=6)
+
+    @validator('new_password')
+    def passwords_must_be_different(cls, v, values):
+        if 'current_password' in values and v == values['current_password']:
+            raise ValueError('New password must be different from current password')
+        return v
+
+
+class GroupSummary(BaseModel):
+    """그룹 요약"""
+    id: int
+    name: str
+    ref_count: int
+    parent_id: Optional[int] = None
+
+
+class HashtagSummary(BaseModel):
+    """해시태그 요약"""
+    name: str
+    count: int
+
+
+class UserStatsResponse(BaseModel):
+    """사용자 통계 응답"""
+    total_groups: int
+    total_refs: int
+    total_hashtags: int
+    groups: List[GroupSummary]
+    hashtags: List[HashtagSummary]
