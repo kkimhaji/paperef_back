@@ -1,6 +1,6 @@
-from pydantic import BaseModel, EmailStr, Field, ConfigDict
+from pydantic import BaseModel, EmailStr, Field, ConfigDict, field_validator
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
 
 # User Schemas
@@ -148,12 +148,13 @@ class PasswordChangeRequest(BaseModel):
     current_password: str = Field(..., min_length=6)
     new_password: str = Field(..., min_length=6)
 
-    @validator('new_password')
-    def passwords_must_be_different(cls, v, values):
-        if 'current_password' in values and v == values['current_password']:
+    @field_validator('new_password')
+    @classmethod
+    def passwords_must_be_different(cls, v, info):
+        # info.data는 이미 검증된 필드들을 담고 있음
+        if 'current_password' in info.data and v == info.data['current_password']:
             raise ValueError('New password must be different from current password')
         return v
-
 
 class GroupSummary(BaseModel):
     """그룹 요약"""
