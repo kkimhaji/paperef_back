@@ -2,19 +2,19 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from jwt import encode, decode, InvalidTokenError
 from pwdlib import PasswordHash
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 import os
 import secrets
+from dotenv import load_dotenv
+from app.models import RefreshToken
 
-from app.database import get_db
-from app.models import User, RefreshToken
+load_dotenv()
 
 # 환경 변수
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-this-in-production")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 
 password_hash = PasswordHash.recommended()
