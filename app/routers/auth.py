@@ -2,6 +2,7 @@ from app.models import User, RefreshToken, PasswordResetToken, Group, Ref, Hasht
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from datetime import timedelta, datetime, timezone
 from app.email_service import send_password_reset_email
 from app.schemas import (
@@ -263,6 +264,8 @@ def reset_password(
     db.commit()
 
     return {"message": "Password has been reset successfully"}
+
+
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: User = Depends(get_current_user)):
     """현재 로그인한 사용자 정보 조회"""
@@ -306,9 +309,10 @@ async def get_user_stats(
     ]
 
     # 해시태그 목록 (최대 10개, 사용 빈도순)
+    # func.count() 사용 수정
     hashtag_usage = db.query(
         Hashtag.name,
-        db.func.count(Ref.id).label('count')
+        func.count(Ref.id).label('count')  # ← db.func → func
     ).join(
         Ref.hashtags
     ).filter(
@@ -316,7 +320,7 @@ async def get_user_stats(
     ).group_by(
         Hashtag.name
     ).order_by(
-        db.func.count(Ref.id).desc()
+        func.count(Ref.id).desc()  # ← db.func → func
     ).limit(10).all()
 
     hashtag_list = [
