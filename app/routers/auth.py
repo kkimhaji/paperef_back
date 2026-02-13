@@ -340,10 +340,11 @@ async def get_user_stats(
 @router.post("/change-password")
 async def change_password(
         request: PasswordChangeRequest,
+        logout_other_devices: bool = True,  # 쿼리 파라미터
         current_user: User = Depends(get_current_user),
         db: Session = Depends(get_db)
 ):
-    """비밀번호 변경 (현재 비밀번호 확인 필요)"""
+    """비밀번호 변경"""
 
     # 현재 비밀번호 확인
     if not verify_password(request.current_password, current_user.hashed_password):
@@ -363,11 +364,16 @@ async def change_password(
     current_user.hashed_password = get_password_hash(request.new_password)
     db.commit()
 
-    # 모든 기기에서 로그아웃 (보안을 위해)
-    revoke_all_user_tokens(db, current_user.id)
-
-    return {"message": "Password changed successfully. Please login again."}
-
+    # 사용자 선택에 따라 다른 기기 로그아웃
+    if logout_other_devices:
+        revoke_all_user_tokens(db, current_user.id)
+        return {
+            "message": "Password changed successfully. Other devices have been logged out."
+        }
+    else:
+        return {
+            "message": "Password changed successfully."
+        }
 
 @router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_account(
