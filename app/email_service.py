@@ -16,11 +16,7 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:8080")
 
 
 async def send_password_reset_email(email: str, reset_token: str):
-    """
-    비밀번호 재설정 이메일 전송
-    """
-    reset_link = f"{FRONTEND_URL}/#/reset-password?token={reset_token}"
-
+    reset_link = f"{FRONTEND_URL}/reset-password?token={reset_token}"
     subject = "Password Reset Request - Paperef"
 
     html_content = f"""
@@ -42,7 +38,7 @@ async def send_password_reset_email(email: str, reset_token: str):
                 padding: 30px;
             }}
             .header {{
-                background-color: #2196F3;
+                background-color: #528155;
                 color: white;
                 padding: 20px;
                 text-align: center;
@@ -52,11 +48,15 @@ async def send_password_reset_email(email: str, reset_token: str):
             .button {{
                 display: inline-block;
                 padding: 12px 30px;
-                background-color: #2196F3;
-                color: white;
+                background-color: #528155;
+                color: white !important;
                 text-decoration: none;
                 border-radius: 5px;
                 margin: 20px 0;
+                font-weight: 600;
+            }}
+            .button:hover {{
+                background-color: #446d48;
             }}
             .footer {{
                 margin-top: 30px;
@@ -64,6 +64,13 @@ async def send_password_reset_email(email: str, reset_token: str):
                 border-top: 1px solid #ddd;
                 font-size: 12px;
                 color: #666;
+            }}
+            .link-box {{
+                word-break: break-all;
+                background-color: #f0f0f0;
+                padding: 10px;
+                border-radius: 4px;
+                color: #333;
             }}
         </style>
     </head>
@@ -84,9 +91,8 @@ async def send_password_reset_email(email: str, reset_token: str):
             </div>
 
             <p>Or copy and paste this link into your browser:</p>
-            <p style="word-break: break-all; background-color: #f0f0f0; padding: 10px; border-radius: 4px;">
-                {reset_link}
-            </p>
+
+            <p class="link-box">{reset_link}</p>
 
             <p><strong>This link will expire in 1 hour.</strong></p>
 
