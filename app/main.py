@@ -4,6 +4,7 @@ import os
 from dotenv import load_dotenv
 from app.database import engine, Base
 from app.routers import auth, refs, groups, hashtags
+from fastapi_utils.tasks import repeat_every
 
 load_dotenv()
 
@@ -70,3 +71,15 @@ def root():
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
+
+if ENV != "production":
+    @app.on_event("startup")
+    @repeat_every(seconds=60 * 60 * 24)  # 24시간마다 실행
+    def scheduled_token_cleanup() -> None:
+        db = SessionLocal()
+        try:
+            cleanup_tokens(db)
+        except Exception as e:
+            print(f"[TokenCleanup] Error: {e}")
+        finally:
+            db.close()
