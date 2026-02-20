@@ -1,5 +1,6 @@
 from app.models import User, RefreshToken, PasswordResetToken, Group, Ref, Hashtag
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi.responses import HTMLResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -469,3 +470,105 @@ def reset_password(
     db.commit()
 
     return {"message": "Password has been reset successfully"}
+
+@router.get("/open-app")
+async def open_app_redirect(token: str):
+    import os
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080")
+    web_reset_url = f"{frontend_url}/reset-password?token={token}"
+    # host를 "app"으로, path를 "/reset-password"로 명확히 분리
+    deep_link_url = f"paperef://app/reset-password?token={token}"
+
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Paperef - Password Reset</title>
+        <style>
+            body {{
+                font-family: 'Segoe UI', sans-serif;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                min-height: 100vh;
+                margin: 0;
+                background-color: #f5f5f5;
+            }}
+            .card {{
+                background: white;
+                border-radius: 12px;
+                padding: 40px;
+                max-width: 400px;
+                width: 90%;
+                text-align: center;
+                box-shadow: 0 2px 16px rgba(0,0,0,0.1);
+            }}
+            .icon {{ font-size: 48px; margin-bottom: 16px; }}
+            h2 {{ color: #528155; margin-bottom: 8px; }}
+            p {{ color: #666; margin-bottom: 24px; }}
+            .btn {{
+                display: block;
+                padding: 14px 32px;
+                background-color: #528155;
+                color: white !important;
+                text-decoration: none;
+                border-radius: 8px;
+                font-weight: 600;
+                font-size: 16px;
+                margin-bottom: 12px;
+                box-sizing: border-box;
+            }}
+            .btn-outline {{
+                display: block;
+                padding: 14px 32px;
+                background-color: white;
+                color: #528155 !important;
+                text-decoration: none;
+                border-radius: 8px;
+                font-weight: 600;
+                font-size: 16px;
+                border: 2px solid #528155;
+                box-sizing: border-box;
+            }}
+            .status {{ color: #999; font-size: 13px; margin-top: 16px; }}
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <div class="icon">🔐</div>
+            <h2>Reset Your Password</h2>
+            <p id="desc">Trying to open the Paperef app...</p>
+
+            <a href="{deep_link_url}" class="btn" id="openAppBtn">📱 Open in App</a>
+            <a href="{web_reset_url}" class="btn-outline">🌐 Reset on Web</a>
+
+            <p class="status" id="statusMsg"></p>
+        </div>
+
+        <script>
+            window.addEventListener('load', function() {{
+                var deepLink = '{deep_link_url}';
+                var webFallback = '{web_reset_url}';
+                var clicked = false;
+
+                // 자동으로 딥링크 시도
+                window.location.href = deepLink;
+
+                // 페이지가 여전히 포커스를 갖고 있으면 앱이 없는 것
+                setTimeout(function() {{
+                    if (!document.hidden) {{
+                        document.getElementById('desc').textContent =
+                            'App not installed or not responding.';
+                        document.getElementById('statusMsg').textContent =
+                            'Use "Reset on Web" if you\'re not using the app.';
+                    }}
+                }}, 2500);
+            }});
+        </script>
+    </body>
+    </html>
+    """
+    from fastapi.responses import HTMLResponse
+    return HTMLResponse(content=html_content)

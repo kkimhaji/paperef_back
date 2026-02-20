@@ -13,10 +13,14 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL")
 SMTP_FROM_NAME = os.getenv("SMTP_FROM_NAME", "Paperef")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:8080")
-
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
 async def send_password_reset_email(email: str, reset_token: str):
-    reset_link = f"{FRONTEND_URL}/reset-password?token={reset_token}"
+    # 중간 리다이렉트 페이지 (https → 이메일에서 클릭 가능)
+    redirect_link = f"{BACKEND_URL}/auth/open-app?token={reset_token}"
+    # 웹 직접 링크 (fallback)
+    web_link = f"{FRONTEND_URL}/reset-password?token={reset_token}"
+
     subject = "Password Reset Request - Paperef"
 
     html_content = f"""
@@ -47,16 +51,14 @@ async def send_password_reset_email(email: str, reset_token: str):
             }}
             .button {{
                 display: inline-block;
-                padding: 12px 30px;
+                padding: 14px 36px;
                 background-color: #528155;
                 color: white !important;
                 text-decoration: none;
-                border-radius: 5px;
-                margin: 20px 0;
+                border-radius: 8px;
+                margin: 8px 0;
                 font-weight: 600;
-            }}
-            .button:hover {{
-                background-color: #446d48;
+                font-size: 16px;
             }}
             .footer {{
                 margin-top: 30px;
@@ -81,22 +83,18 @@ async def send_password_reset_email(email: str, reset_token: str):
             </div>
 
             <p>Hello,</p>
-
             <p>We received a request to reset your password for your Paperef account.</p>
-
             <p>Click the button below to reset your password:</p>
 
-            <div style="text-align: center;">
-                <a href="{reset_link}" class="button">Reset Password</a>
+            <div style="text-align: center; margin: 28px 0;">
+                <a href="{redirect_link}" class="button">Reset Password</a>
             </div>
 
             <p>Or copy and paste this link into your browser:</p>
-
-            <p class="link-box">{reset_link}</p>
+            <p class="link-box">{web_link}</p>
 
             <p><strong>This link will expire in 1 hour.</strong></p>
-
-            <p>If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.</p>
+            <p>If you didn't request a password reset, you can safely ignore this email.</p>
 
             <div class="footer">
                 <p>This is an automated message from Paperef. Please do not reply to this email.</p>
@@ -110,16 +108,12 @@ async def send_password_reset_email(email: str, reset_token: str):
     text_content = f"""
     Password Reset Request - Paperef
 
-    Hello,
-
-    We received a request to reset your password for your Paperef account.
-
+    We received a request to reset your password.
     Click the link below to reset your password:
-    {reset_link}
+    {redirect_link}
 
     This link will expire in 1 hour.
-
-    If you didn't request a password reset, you can safely ignore this email.
+    If you didn't request this, please ignore this email.
 
     Best regards,
     Paperef Team
@@ -130,11 +124,8 @@ async def send_password_reset_email(email: str, reset_token: str):
     message["From"] = f"{SMTP_FROM_NAME} <{SMTP_FROM_EMAIL}>"
     message["To"] = email
 
-    part1 = MIMEText(text_content, "plain")
-    part2 = MIMEText(html_content, "html")
-
-    message.attach(part1)
-    message.attach(part2)
+    message.attach(MIMEText(text_content, "plain"))
+    message.attach(MIMEText(html_content, "html"))
 
     try:
         await aiosmtplib.send(
