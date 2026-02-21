@@ -5,8 +5,7 @@ from app.database import get_db
 from app.models import User, Hashtag, Ref
 from app.dependencies import get_current_user
 
-router = APIRouter()
-
+router = APIRouter(redirect_slashes=False)
 
 @router.get("/")
 def get_user_hashtags(

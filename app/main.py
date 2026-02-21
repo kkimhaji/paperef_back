@@ -16,7 +16,8 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(
     title="Paperef API",
     description="논문 메모 관리 API",
-    version="1.0.0"
+    version="1.0.0",
+    redirect_slashes=False,
 )
 
 

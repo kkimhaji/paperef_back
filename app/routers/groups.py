@@ -7,8 +7,7 @@ from app.models import User, Group, Ref
 from app.schemas import GroupCreate, GroupUpdate, GroupResponse, GroupWithRefCount
 from app.dependencies import get_current_user
 
-router = APIRouter()
-
+router = APIRouter(redirect_slashes=False)
 
 @router.post("/", response_model=GroupResponse, status_code=201)
 def create_group(

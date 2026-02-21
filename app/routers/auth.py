@@ -32,8 +32,7 @@ from app.auth import (
 )
 from app.dependencies import get_current_user
 
-router = APIRouter()
-
+router = APIRouter(redirect_slashes=False)
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register(user_data: UserCreate, db: Session = Depends(get_db)):

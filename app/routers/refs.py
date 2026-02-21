@@ -6,8 +6,7 @@ from app.models import User, Ref, Hashtag, Group
 from app.schemas import RefCreate, RefUpdate, RefResponse, RefListResponse
 from app.dependencies import get_current_user
 
-router = APIRouter()
-
+router = APIRouter(redirect_slashes=False)
 
 def get_or_create_hashtag(db: Session, hashtag_name: str) -> Hashtag:
     """해시태그 조회 또는 생성"""
