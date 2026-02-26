@@ -29,6 +29,7 @@ if ENV == "production":
     origins = [
         "https://paperef.com",
         "https://www.paperef.com",
+        "https://d29n3vqbryd7hd.cloudfront.net",  # 프론트엔드 CloudFront 도메인 추가
     ]
 else:
     # 개발: 로컬 개발 환경 허용
