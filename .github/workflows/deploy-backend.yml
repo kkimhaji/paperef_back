@@ -40,8 +40,8 @@ jobs:
           script: |
             aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | \
               docker login --username AWS --password-stdin \
-              ${{ steps.login-ecr.outputs.registry }}
+              970023790785.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
             cd ~/paperef
-            docker compose pull api
+            docker compose pull backend
             docker compose up -d
             docker image prune -f
