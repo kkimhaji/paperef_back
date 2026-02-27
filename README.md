@@ -135,8 +135,3 @@ flowchart TD
 
 > 준비 중
 
----
-
-## 📄 License
-
-This project is for portfolio purposes.
