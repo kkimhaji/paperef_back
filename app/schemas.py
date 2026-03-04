@@ -5,17 +5,22 @@ from typing import Optional, List
 # User Schemas
 class UserBase(BaseModel):
     email: EmailStr
-    username: str = Field(min_length=3, max_length=128)
+    username: str = Field(min_length=1, max_length=20)
 
 class UserCreate(UserBase):
     password: str = Field(min_length=8, max_length=128)
+
+class UserUpdate(BaseModel):
+    username: Optional[str] = Field(None, min_length=1, max_length=20)
 
 class UserResponse(BaseModel):
     id: int
     email: str
     username: str
     created_at: datetime
+
     model_config = ConfigDict(from_attributes=True)
+
 
 # Token Schemas
 class Token(BaseModel):
@@ -29,6 +34,7 @@ class TokenRefreshRequest(BaseModel):
 class TokenData(BaseModel):
     user_id: Optional[int] = None
     token_type: Optional[str] = "access"
+
 
 # Group Schemas
 class GroupBase(BaseModel):
@@ -49,6 +55,7 @@ class GroupResponse(GroupBase):
     parent_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
+
     model_config = ConfigDict(from_attributes=True)
 
 class GroupWithRefCount(BaseModel):
@@ -60,7 +67,9 @@ class GroupWithRefCount(BaseModel):
     children_count: int
     created_at: datetime
     updated_at: datetime
+
     model_config = ConfigDict(from_attributes=True)
+
 
 # Hashtag Schemas
 class HashtagBase(BaseModel):
@@ -68,7 +77,9 @@ class HashtagBase(BaseModel):
 
 class HashtagResponse(HashtagBase):
     id: int
+
     model_config = ConfigDict(from_attributes=True)
+
 
 # Ref Schemas
 class RefBase(BaseModel):
@@ -95,6 +106,7 @@ class RefResponse(RefBase):
     created_at: datetime
     updated_at: datetime
     hashtags: list[HashtagResponse] = []
+
     model_config = ConfigDict(from_attributes=True)
 
 class RefListResponse(BaseModel):
@@ -107,8 +119,11 @@ class RefListResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     hashtags: list[HashtagResponse] = []
+
     model_config = ConfigDict(from_attributes=True)
 
+
+# Password / Account Schemas
 class PasswordResetRequest(BaseModel):
     email: str = Field(pattern=r".+@.+\..+")
 
@@ -127,6 +142,8 @@ class PasswordChangeRequest(BaseModel):
             raise ValueError("New password must be different from current password")
         return v
 
+
+# Stats Schemas
 class GroupSummary(BaseModel):
     id: int
     name: str
