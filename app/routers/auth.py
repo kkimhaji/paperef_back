@@ -13,8 +13,9 @@ from app.schemas import (
     TokenRefreshRequest,
     PasswordResetRequest,
     PasswordResetConfirm,
-PasswordChangeRequest,
-    UserStatsResponse
+    PasswordChangeRequest,
+    UserStatsResponse,
+    UserUpdate
 )
 import secrets
 from app.database import get_db
@@ -33,6 +34,7 @@ from app.auth import (
 from app.dependencies import get_current_user
 
 router = APIRouter(redirect_slashes=False)
+
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register(user_data: UserCreate, db: Session = Depends(get_db)):
@@ -274,67 +276,59 @@ async def get_me(current_user: User = Depends(get_current_user)):
 
 @router.get("/me/stats", response_model=UserStatsResponse)
 async def get_user_stats(
-        current_user: User = Depends(get_current_user),
-        db: Session = Depends(get_db)
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    """사용자 통계 정보 조회 (그룹 수, 해시태그 수, 레퍼런스 수)"""
-
-    # 그룹 수 (계층 구조 포함 모든 그룹)
     total_groups = db.query(Group).filter(Group.user_id == current_user.id).count()
-
-    # 레퍼런스 수
     total_refs = db.query(Ref).filter(Ref.user_id == current_user.id).count()
 
-    # 사용자의 레퍼런스에 연결된 고유 해시태그 수
-    hashtag_ids = db.query(Hashtag.id).join(
-        Ref.hashtags
-    ).filter(
-        Ref.user_id == current_user.id
-    ).distinct().all()
+    hashtag_ids = (
+        db.query(Hashtag.id)
+        .join(Ref.hashtags)
+        .filter(Ref.user_id == current_user.id)
+        .distinct()
+        .all()
+    )
     total_hashtags = len(hashtag_ids)
 
-    # 그룹 목록 (최대 10개, ref_count 포함)
-    groups = db.query(Group).filter(
-        Group.user_id == current_user.id
-    ).order_by(Group.name).limit(10).all()
-
+    groups = (
+        db.query(Group)
+        .filter(Group.user_id == current_user.id)
+        .order_by(Group.name)
+        .limit(10)
+        .all()
+    )
     group_list = [
         {
             "id": group.id,
             "name": group.name,
             "ref_count": len(group.refs),
-            "parent_id": group.parent_id
+            "parent_id": group.parent_id,
+            "created_at": group.created_at,
+            "updated_at": group.updated_at,
         }
         for group in groups
     ]
 
-    # 해시태그 목록 (최대 10개, 사용 빈도순)
-    # func.count() 사용 수정
-    hashtag_usage = db.query(
-        Hashtag.name,
-        func.count(Ref.id).label('count')  # ← db.func → func
-    ).join(
-        Ref.hashtags
-    ).filter(
-        Ref.user_id == current_user.id
-    ).group_by(
-        Hashtag.name
-    ).order_by(
-        func.count(Ref.id).desc()  # ← db.func → func
-    ).limit(10).all()
-
-    hashtag_list = [
-        {"name": tag.name, "count": tag.count}
-        for tag in hashtag_usage
-    ]
+    hashtag_usage = (
+        db.query(Hashtag.name, func.count(Ref.id).label("count"))
+        .join(Ref.hashtags)
+        .filter(Ref.user_id == current_user.id)
+        .group_by(Hashtag.name)
+        .order_by(func.count(Ref.id).desc())
+        .limit(10)
+        .all()
+    )
+    hashtag_list = [{"name": tag.name, "count": tag.count} for tag in hashtag_usage]
 
     return {
         "total_groups": total_groups,
         "total_refs": total_refs,
         "total_hashtags": total_hashtags,
         "groups": group_list,
-        "hashtags": hashtag_list
+        "hashtags": hashtag_list,
     }
+
 
 
 @router.post("/change-password")
@@ -374,6 +368,41 @@ async def change_password(
         return {
             "message": "Password changed successfully."
         }
+
+
+@router.put("/me", response_model=UserResponse)
+async def update_me(
+        user_update: UserUpdate,
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db),
+):
+    if user_update.username is not None:
+        new_username = user_update.username.strip()
+
+        # 빈 문자열 체크만 (Pydantic에서 이미 1글자 이상 보장)
+        if not new_username:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username cannot be empty",
+            )
+
+        # Unique 체크만 (길이는 Pydantic 스키마에서 처리)
+        existing = (
+            db.query(User)
+            .filter(User.username == new_username, User.id != current_user.id)
+            .first()
+        )
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username already taken",
+            )
+
+        current_user.username = new_username
+
+    db.commit()
+    db.refresh(current_user)
+    return current_user
 
 @router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_account(
@@ -469,6 +498,7 @@ def reset_password(
     db.commit()
 
     return {"message": "Password has been reset successfully"}
+
 
 @router.get("/open-app")
 async def open_app_redirect(token: str):
