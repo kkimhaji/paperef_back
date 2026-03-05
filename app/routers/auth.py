@@ -48,15 +48,6 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered"
         )
-
-    # 사용자명 중복 확인
-    db_user = db.query(User).filter(User.username == user_data.username).first()
-    if db_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already taken"
-        )
-
     # 새 사용자 생성
     hashed_password = get_password_hash(user_data.password)
     new_user = User(
@@ -384,18 +375,6 @@ async def update_me(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Username cannot be empty",
-            )
-
-        # Unique 체크만 (길이는 Pydantic 스키마에서 처리)
-        existing = (
-            db.query(User)
-            .filter(User.username == new_username, User.id != current_user.id)
-            .first()
-        )
-        if existing:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Username already taken",
             )
 
         current_user.username = new_username
