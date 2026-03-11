@@ -1,19 +1,21 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import exists
 from typing import Optional, List
+
 from app.database import get_db
-from app.models import User, Ref, Hashtag, Group
+from app.models import User, Ref, RefSummary, Hashtag, Group
 from app.schemas import RefCreate, RefUpdate, RefResponse, RefListResponse
 from app.dependencies import get_current_user
 
 router = APIRouter(redirect_slashes=False)
 
-def get_or_create_hashtag(db: Session, hashtag_name: str) -> Hashtag:
-    """해시태그 조회 또는 생성"""
-    hashtag_name = hashtag_name.strip().lower()
-    hashtag = db.query(Hashtag).filter(Hashtag.name == hashtag_name).first()
+
+def get_or_create_hashtag(db: Session, name: str) -> Hashtag:
+    name = name.strip().lower()
+    hashtag = db.query(Hashtag).filter(Hashtag.name == name).first()
     if not hashtag:
-        hashtag = Hashtag(name=hashtag_name)
+        hashtag = Hashtag(name=name)
         db.add(hashtag)
         db.commit()
         db.refresh(hashtag)
@@ -21,47 +23,38 @@ def get_or_create_hashtag(db: Session, hashtag_name: str) -> Hashtag:
 
 
 def get_all_descendant_group_ids(db: Session, group_id: int) -> List[int]:
-    """
-    재귀적으로 모든 하위 그룹의 ID를 수집
-
-    Args:
-        db: 데이터베이스 세션
-        group_id: 시작 그룹 ID
-
-    Returns:
-        List[int]: 해당 그룹과 모든 하위 그룹의 ID 리스트
-    """
-    group_ids = [group_id]
-
-    # 직접 자식 그룹 조회
-    children = db.query(Group).filter(Group.parent_id == group_id).all()
-
-    # 재귀적으로 각 자식의 하위 그룹 ID 수집
-    for child in children:
-        group_ids.extend(get_all_descendant_group_ids(db, child.id))
-
-    return group_ids
+    ids = [group_id]
+    for child in db.query(Group).filter(Group.parent_id == group_id).all():
+        ids.extend(get_all_descendant_group_ids(db, child.id))
+    return ids
 
 
 def get_group_path(db: Session, group_id: int) -> str:
-    """그룹의 전체 경로를 '/' 구분자로 반환
-
-    예시:
-    - Root Group -> "Root Group"
-    - Sub Group (parent: Root Group) -> "Root Group / Sub Group"
-    - Deep Group (parent: Sub Group) -> "Root Group / Sub Group / Deep Group"
-    """
-    path_parts = []
+    parts: list[str] = []
     current = db.query(Group).filter(Group.id == group_id).first()
-
     while current:
-        path_parts.insert(0, current.name)
-        if current.parent_id:
-            current = db.query(Group).filter(Group.id == current.parent_id).first()
-        else:
-            current = None
+        parts.insert(0, current.name)
+        current = (
+            db.query(Group).filter(Group.id == current.parent_id).first()
+            if current.parent_id else None
+        )
+    return " / ".join(parts)
 
-    return " / ".join(path_parts)
+
+def _apply_summaries(ref: Ref, summaries: list[str]) -> None:
+    """Replace all RefSummary rows for the given Ref."""
+    ref.ref_summaries.clear()
+    for position, content in enumerate(summaries):
+        ref.ref_summaries.append(RefSummary(content=content, position=position))
+
+
+def _load_ref_options():
+    return [
+        joinedload(Ref.group),
+        joinedload(Ref.hashtags),
+        joinedload(Ref.ref_summaries),
+    ]
+
 
 @router.post("/", response_model=RefResponse, status_code=status.HTTP_201_CREATED)
 def create_ref(
@@ -69,8 +62,6 @@ def create_ref(
         current_user: User = Depends(get_current_user),
         db: Session = Depends(get_db),
 ):
-    """레퍼런스 생성"""
-    # 그룹 존재 확인
     if ref_data.group_id:
         group = db.query(Group).filter(
             Group.id == ref_data.group_id,
@@ -81,72 +72,72 @@ def create_ref(
 
     new_ref = Ref(
         title=ref_data.title,
-        summary=ref_data.summary,
         content=ref_data.content,
         user_id=current_user.id,
         group_id=ref_data.group_id,
     )
 
-    # 해시태그 추가
+    _apply_summaries(new_ref, ref_data.summaries)
+
     if ref_data.hashtags:
         for tag_name in ref_data.hashtags:
-            hashtag = get_or_create_hashtag(db, tag_name)
-            new_ref.hashtags.append(hashtag)
+            new_ref.hashtags.append(get_or_create_hashtag(db, tag_name))
 
     db.add(new_ref)
     db.commit()
     db.refresh(new_ref)
-    return new_ref
+
+    # Re-load with all relationships for response serialization
+    return db.query(Ref).options(*_load_ref_options()).filter(Ref.id == new_ref.id).first()
 
 
 @router.get("/", response_model=list[RefListResponse])
 def get_refs(
         skip: int = Query(0, ge=0),
         limit: int = Query(100, ge=1, le=100),
-        hashtag: Optional[str] = Query(None, description="Filter by hashtag"),
-        group_id: Optional[int] = Query(None, description="Filter by group (includes subgroups)"),
-        search: Optional[str] = Query(None, description="Search in title, summary, and content"),
-        include_subgroups: bool = Query(True, description="Include references from subgroups"),
+        hashtag: Optional[str] = Query(None),
+        group_id: Optional[int] = Query(None),
+        search: Optional[str] = Query(None),
+        include_subgroups: bool = Query(True),
         current_user: User = Depends(get_current_user),
         db: Session = Depends(get_db),
 ):
-    """레퍼런스 목록 조회 (그룹 경로 포함)"""
-    query = db.query(Ref).options(
-        joinedload(Ref.group),
-        joinedload(Ref.hashtags)
-    ).filter(Ref.user_id == current_user.id)
+    query = (
+        db.query(Ref)
+        .options(*_load_ref_options())
+        .filter(Ref.user_id == current_user.id)
+    )
 
     if group_id is not None:
         if group_id == 0:
-            query = query.filter(Ref.group_id == None)
+            query = query.filter(Ref.group_id == None)  # noqa: E711
+        elif include_subgroups:
+            query = query.filter(
+                Ref.group_id.in_(get_all_descendant_group_ids(db, group_id))
+            )
         else:
-            if include_subgroups:
-                all_group_ids = get_all_descendant_group_ids(db, group_id)
-                query = query.filter(Ref.group_id.in_(all_group_ids))
-            else:
-                query = query.filter(Ref.group_id == group_id)
+            query = query.filter(Ref.group_id == group_id)
 
     if hashtag:
-        hashtag = hashtag.strip().lower()
-        query = query.join(Ref.hashtags).filter(Hashtag.name == hashtag)
+        query = query.join(Ref.hashtags).filter(Hashtag.name == hashtag.strip().lower())
 
     if search:
-        search_pattern = f"%{search}%"
+        pattern = f"%{search}%"
         query = query.filter(
-            (Ref.title.ilike(search_pattern)) |
-            (Ref.summary.ilike(search_pattern)) |
-            (Ref.content.ilike(search_pattern))
+            (Ref.title.ilike(pattern))
+            | (Ref.content.ilike(pattern))
+            | exists().where(
+                (RefSummary.ref_id == Ref.id) & RefSummary.content.ilike(pattern)
+            )
         )
 
     refs = query.order_by(Ref.updated_at.desc()).offset(skip).limit(limit).all()
 
-    # 그룹 경로를 포함한 응답 생성
-    result = []
-    for ref in refs:
-        ref_dict = {
+    return [
+        {
             "id": ref.id,
             "title": ref.title,
-            "summary": ref.summary,
+            "summaries": [s.content for s in ref.ref_summaries],
             "user_id": ref.user_id,
             "group_id": ref.group_id,
             "group_name": get_group_path(db, ref.group_id) if ref.group_id else None,
@@ -154,9 +145,8 @@ def get_refs(
             "updated_at": ref.updated_at,
             "hashtags": ref.hashtags,
         }
-        result.append(ref_dict)
-
-    return result
+        for ref in refs
+    ]
 
 
 @router.get("/{ref_id}", response_model=RefResponse)
@@ -165,21 +155,14 @@ def get_ref(
         current_user: User = Depends(get_current_user),
         db: Session = Depends(get_db),
 ):
-    """특정 레퍼런스 조회 (그룹 경로 포함)"""
-    ref = db.query(Ref).options(
-        joinedload(Ref.group),
-        joinedload(Ref.hashtags)
-    ).filter(
-        Ref.id == ref_id,
-        Ref.user_id == current_user.id,
-    ).first()
-
+    ref = (
+        db.query(Ref)
+        .options(*_load_ref_options())
+        .filter(Ref.id == ref_id, Ref.user_id == current_user.id)
+        .first()
+    )
     if not ref:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Ref not found"
-        )
-
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ref not found")
     return ref
 
 
@@ -190,46 +173,39 @@ def update_ref(
         current_user: User = Depends(get_current_user),
         db: Session = Depends(get_db),
 ):
-    """레퍼런스 수정"""
-    ref = db.query(Ref).filter(
+    ref = db.query(Ref).options(joinedload(Ref.ref_summaries)).filter(
         Ref.id == ref_id,
         Ref.user_id == current_user.id,
     ).first()
     if not ref:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Ref not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ref not found")
 
-    # 그룹 변경
+    if ref_data.title is not None:
+        ref.title = ref_data.title
+    if ref_data.content is not None:
+        ref.content = ref_data.content
+    if ref_data.summaries is not None:
+        _apply_summaries(ref, ref_data.summaries)
+
     if ref_data.group_id is not None:
-        if ref_data.group_id != 0:
+        if ref_data.group_id == 0:
+            ref.group_id = None
+        else:
             group = db.query(Group).filter(
                 Group.id == ref_data.group_id,
                 Group.user_id == current_user.id,
             ).first()
             if not group:
                 raise HTTPException(status_code=404, detail="Group not found")
-        ref.group_id = ref_data.group_id if ref_data.group_id != 0 else None
+            ref.group_id = ref_data.group_id
 
-    # 해시태그 업데이트
     if ref_data.hashtags is not None:
         ref.hashtags.clear()
         for tag_name in ref_data.hashtags:
-            hashtag = get_or_create_hashtag(db, tag_name)
-            ref.hashtags.append(hashtag)
-
-    # 기타 필드 업데이트
-    if ref_data.title is not None:
-        ref.title = ref_data.title
-    if ref_data.summary is not None:
-        ref.summary = ref_data.summary
-    if ref_data.content is not None:
-        ref.content = ref_data.content
+            ref.hashtags.append(get_or_create_hashtag(db, tag_name))
 
     db.commit()
-    db.refresh(ref)
-    return ref
+    return db.query(Ref).options(*_load_ref_options()).filter(Ref.id == ref.id).first()
 
 
 @router.delete("/{ref_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -238,16 +214,11 @@ def delete_ref(
         current_user: User = Depends(get_current_user),
         db: Session = Depends(get_db),
 ):
-    """레퍼런스 삭제"""
     ref = db.query(Ref).filter(
         Ref.id == ref_id,
         Ref.user_id == current_user.id,
     ).first()
     if not ref:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Ref not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ref not found")
     db.delete(ref)
     db.commit()
-    return None

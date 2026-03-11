@@ -1,14 +1,14 @@
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Table, Boolean
 from sqlalchemy.orm import relationship
-from datetime import datetime, timedelta
+from datetime import datetime
 from app.database import Base
 
-# 논문과 해시태그의 다대다 관계 테이블
+
 ref_hashtags = Table(
-    'ref_hashtags',
+    "ref_hashtags",
     Base.metadata,
-    Column('ref_id', Integer, ForeignKey('refs.id', ondelete='CASCADE')),
-    Column('hashtag_id', Integer, ForeignKey('hashtags.id', ondelete='CASCADE'))
+    Column("ref_id", Integer, ForeignKey("refs.id", ondelete="CASCADE")),
+    Column("hashtag_id", Integer, ForeignKey("hashtags.id", ondelete="CASCADE")),
 )
 
 
@@ -21,7 +21,7 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    refs = relationship("Ref", back_populates="owner", cascade="all, delete-orphan")  # 수정
+    refs = relationship("Ref", back_populates="owner", cascade="all, delete-orphan")
     refresh_tokens = relationship("RefreshToken", back_populates="owner", cascade="all, delete-orphan")
     groups = relationship("Group", back_populates="owner", cascade="all, delete-orphan")
 
@@ -31,7 +31,7 @@ class RefreshToken(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     token = Column(String(500), unique=True, index=True, nullable=False)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete='CASCADE'), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     expires_at = Column(DateTime, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     revoked = Column(Boolean, default=False)
@@ -39,15 +39,25 @@ class RefreshToken(Base):
     owner = relationship("User", back_populates="refresh_tokens")
 
 
+class RefSummary(Base):
+    __tablename__ = "ref_summaries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ref_id = Column(Integer, ForeignKey("refs.id", ondelete="CASCADE"), nullable=False)
+    content = Column(Text, nullable=False)
+    position = Column(Integer, nullable=False, default=0)  # 0-based ordering
+
+    ref = relationship("Ref", back_populates="ref_summaries")
+
+
 class Ref(Base):
     __tablename__ = "refs"
 
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String(255), index=True, nullable=False)
-    summary = Column(Text)
     content = Column(Text)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete='CASCADE'), nullable=False)
-    group_id = Column(Integer, ForeignKey("groups.id", ondelete='SET NULL'), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    group_id = Column(Integer, ForeignKey("groups.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -56,12 +66,22 @@ class Ref(Base):
     hashtags = relationship(
         "Hashtag",
         secondary=ref_hashtags,
-        back_populates="refs"
+        back_populates="refs",
     )
+    ref_summaries = relationship(
+        "RefSummary",
+        back_populates="ref",
+        cascade="all, delete-orphan",
+        order_by="RefSummary.position",
+    )
+
     @property
-    def group_name(self):
-        """그룹 이름을 반환하는 속성"""
+    def group_name(self) -> str | None:
         return self.group.name if self.group else None
+
+    @property
+    def summaries(self) -> list[str]:
+        return [s.content for s in self.ref_summaries]
 
 
 class Hashtag(Base):
@@ -70,11 +90,12 @@ class Hashtag(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(50), unique=True, index=True, nullable=False)
 
-    refs = relationship(
-        "Ref",
-        secondary=ref_hashtags,
-        back_populates="hashtags"
-    )
+    refs = relationship("Hashtag" and "Ref", secondary=ref_hashtags, back_populates="hashtags")
+
+
+# Re-declare to fix forward reference
+Hashtag.refs = relationship("Ref", secondary=ref_hashtags, back_populates="hashtags")
+
 
 class Group(Base):
     __tablename__ = "groups"
@@ -82,8 +103,8 @@ class Group(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete='CASCADE'), nullable=False)
-    parent_id = Column(Integer, ForeignKey("groups.id", ondelete='CASCADE'), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    parent_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -91,7 +112,7 @@ class Group(Base):
     refs = relationship("Ref", back_populates="group")
     parent = relationship("Group", remote_side=[id], backref="children")
 
-# 기존 모델들 아래에 추가
+
 class PasswordResetToken(Base):
     __tablename__ = "password_reset_tokens"
 
@@ -102,5 +123,5 @@ class PasswordResetToken(Base):
     used = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    def is_valid(self):
+    def is_valid(self) -> bool:
         return not self.used and datetime.utcnow() < self.expires_at
