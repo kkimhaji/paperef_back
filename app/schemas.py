@@ -144,6 +144,10 @@ class RefListResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+class RefCursorPageResponse(BaseModel):
+    items:       list[RefListResponse]
+    next_cursor: Optional[str] = None
+    has_more:    bool
 
 #Password / Account
 
