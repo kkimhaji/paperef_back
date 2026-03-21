@@ -44,6 +44,7 @@ AWS EC2, ECR, CloudFront를 활용하여 실제 운영 환경에 배포하였으
 | **전체 복사** | 레퍼런스 전체 내용을 클립보드에 복사 |
 | **반응형 UI** | iPad 스플릿 뷰, Stage Manager 등 다양한 화면 크기 대응 |
 | **비밀번호 재설정** | 이메일 기반 토큰 인증 비밀번호 재설정 |
+| **무한 스크롤** | Cursor 기반 페이지네이션으로 레퍼런스를 20개씩 순차 로드, 스크롤 하단 도달 시 자동 추가 요청 |
 
 ---
 
@@ -68,6 +69,7 @@ AWS EC2, ECR, CloudFront를 활용하여 실제 운영 환경에 배포하였으
 - **PostgreSQL** — 관계형 데이터베이스
 - **JWT** — 인증 토큰 (Access 30분 + Refresh 7일)
 - **Pydantic** — 데이터 검증
+- **Cursor Pagination** — `updated_at` + `id` 복합 커서 기반 페이지네이션 (Base64 인코딩)
 
 ### Infra / DevOps
 ![AWS](https://img.shields.io/badge/AWS-232F3E?style=for-the-badge&logo=amazon-aws&logoColor=white)
