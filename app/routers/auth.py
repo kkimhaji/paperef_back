@@ -267,8 +267,8 @@ async def get_me(current_user: User = Depends(get_current_user)):
 
 @router.get("/me/stats", response_model=UserStatsResponse)
 async def get_user_stats(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db),
 ):
     total_groups = db.query(Group).filter(Group.user_id == current_user.id).count()
     total_refs = db.query(Ref).filter(Ref.user_id == current_user.id).count()
@@ -319,7 +319,6 @@ async def get_user_stats(
         "groups": group_list,
         "hashtags": hashtag_list,
     }
-
 
 
 @router.post("/change-password")
@@ -382,6 +381,7 @@ async def update_me(
     db.commit()
     db.refresh(current_user)
     return current_user
+
 
 @router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_account(
@@ -580,3 +580,39 @@ async def open_app_redirect(token: str):
     """
     from fastapi.responses import HTMLResponse
     return HTMLResponse(content=html_content)
+
+
+@router.post("/forgot-password")
+async def forgot_password(
+        request: PasswordResetRequest,
+        db: Session = Depends(get_db),
+):
+    """비밀번호 재설정 요청 - 이메일로 재설정 링크 전송"""
+    user = db.query(User).filter(User.email == request.email).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No account found with this email address.",
+        )
+
+    # 기존 미사용 토큰 삭제
+    db.query(PasswordResetToken).filter(
+        PasswordResetToken.email == request.email,
+        PasswordResetToken.used == False,
+    ).delete()
+
+    reset_token = secrets.token_urlsafe(32)
+    expires_at = datetime.utcnow() + timedelta(hours=1)
+
+    db_token = PasswordResetToken(
+        email=request.email,
+        token=reset_token,
+        expires_at=expires_at,
+    )
+    db.add(db_token)
+    db.commit()
+
+    await send_password_reset_email(request.email, reset_token)
+
+    return {"message": "Password reset link has been sent to your email."}
