@@ -9,8 +9,9 @@ from typing import Optional, List
 
 from app.database import get_db
 from app.models import User, Ref, RefSummary, Hashtag, Group
-from app.schemas import RefCreate, RefUpdate, RefResponse, RefListResponse, RefCursorPageResponse
+from app.schemas import RefCreate, RefUpdate, RefResponse, RefCursorPageResponse
 from app.dependencies import get_current_user
+from app.routers.groups import get_all_descendant_group_ids
 
 router = APIRouter(redirect_slashes=False)
 
@@ -24,13 +25,6 @@ def get_or_create_hashtag(db: Session, name: str) -> Hashtag:
         db.commit()
         db.refresh(hashtag)
     return hashtag
-
-
-def get_all_descendant_group_ids(db: Session, group_id: int) -> List[int]:
-    ids = [group_id]
-    for child in db.query(Group).filter(Group.parent_id == group_id).all():
-        ids.extend(get_all_descendant_group_ids(db, child.id))
-    return ids
 
 
 def get_group_path(db: Session, group_id: int) -> str:
