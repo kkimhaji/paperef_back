@@ -86,7 +86,7 @@ AWS EC2, ECR, CloudFront를 활용하여 실제 운영 환경에 배포하였으
 ---
 ## Database Schema
 <div align="center">
-<img src="https://github.com/user-attachments/assets/e32dd9be-109c-49d3-a887-bcb29afc220d" />
+    <img width="986" height="652" alt="Image" src="https://github.com/user-attachments/assets/9b2f34c1-1b11-4f9d-aed4-d99f18615bc7" />
 </div>
 
 ---
