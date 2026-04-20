@@ -1,6 +1,7 @@
 from pydantic import BaseModel, EmailStr, Field, ConfigDict, field_validator
 from datetime import datetime
 from typing import Optional, List
+from enum import Enum
 
 
 #User
@@ -169,6 +170,10 @@ class PasswordChangeRequest(BaseModel):
             raise ValueError("New password must be different from current password")
         return v
 
+class RefSortBy(str, Enum):
+    CREATED_DESC  = "created_desc"   # 등록 최신순
+    UPDATED_DESC  = "updated_desc"   # 수정 최신순 (기본값)
+    CREATED_ASC   = "created_asc"    # 등록순 (오래된 것부터)
 
 #Stats
 
