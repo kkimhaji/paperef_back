@@ -99,7 +99,7 @@ def login(
     )
 
     # Refresh Token을 데이터베이스에 저장
-    expires_at = datetime.now(timezone.utc) + refresh_token_expires
+    expires_at = datetime.utcnow() + refresh_token_expires
     save_refresh_token(db, user.id, refresh_token, expires_at)
 
     return {
@@ -140,7 +140,7 @@ def refresh_access_token(
     )
 
     # 새 Refresh Token을 데이터베이스에 저장
-    expires_at = datetime.now(timezone.utc) + refresh_token_expires
+    expires_at = datetime.utcnow()+ refresh_token_expires
     save_refresh_token(db, db_token.user_id, new_refresh_token, expires_at)
 
     return {
@@ -173,90 +173,6 @@ def logout_all_devices(
     """
     revoke_all_user_tokens(db, current_user.id)
     return {"message": "Successfully logged out from all devices"}
-
-
-@router.get("/me", response_model=UserResponse)
-async def get_me(current_user: User = Depends(get_current_user)):
-    """
-    현재 로그인한 사용자 정보 조회
-    """
-    return current_user
-
-
-@router.post("/forgot-password")
-async def forgot_password(
-        request: PasswordResetRequest,
-        db: Session = Depends(get_db)
-):
-    """
-    비밀번호 재설정 요청 - 이메일로 재설정 링크 전송
-    """
-    # 이메일이 존재하는지 확인
-    user = db.query(User).filter(User.email == request.email).first()
-
-    # 보안상 이메일 존재 여부를 알려주지 않음
-    if not user:
-        return {"message": "If the email exists, a password reset link has been sent."}
-
-    # 기존 토큰이 있으면 삭제
-    db.query(PasswordResetToken).filter(
-        PasswordResetToken.email == request.email,
-        PasswordResetToken.used == False
-    ).delete()
-
-    # 재설정 토큰 생성
-    reset_token = secrets.token_urlsafe(32)
-    expires_at = datetime.utcnow() + timedelta(hours=1)
-
-    # 토큰 저장
-    db_token = PasswordResetToken(
-        email=request.email,
-        token=reset_token,
-        expires_at=expires_at
-    )
-    db.add(db_token)
-    db.commit()
-
-    # 이메일 전송
-    await send_password_reset_email(request.email, reset_token)
-
-    return {"message": "If the email exists, a password reset link has been sent."}
-
-
-@router.post("/reset-password")
-def reset_password(
-        request: PasswordResetConfirm,
-        db: Session = Depends(get_db)
-):
-    """
-    비밀번호 재설정 확인 - 토큰 검증 후 새 비밀번호 설정
-    """
-    # 토큰 조회
-    token_record = db.query(PasswordResetToken).filter(
-        PasswordResetToken.token == request.token
-    ).first()
-
-    if not token_record:
-        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
-
-    # 토큰 유효성 검사
-    if not token_record.is_valid():
-        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
-
-    # 사용자 조회
-    user = db.query(User).filter(User.email == token_record.email).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    # 비밀번호 변경
-    user.hashed_password = get_password_hash(request.new_password)
-
-    # 토큰 사용 처리
-    token_record.used = True
-
-    db.commit()
-
-    return {"message": "Password has been reset successfully"}
 
 
 @router.get("/me", response_model=UserResponse)
@@ -415,40 +331,6 @@ async def delete_account(
     db.commit()
 
     return None
-
-
-@router.post("/forgot-password")
-async def forgot_password(
-        request: PasswordResetRequest,
-        db: Session = Depends(get_db)
-):
-    """비밀번호 재설정 이메일 전송"""
-    # 기존 코드 유지
-    user = db.query(User).filter(User.email == request.email).first()
-
-    if not user:
-        return {"message": "If the email exists, a password reset link has been sent."}
-
-    # 기존 미사용 토큰 삭제
-    db.query(PasswordResetToken).filter(
-        PasswordResetToken.email == request.email,
-        PasswordResetToken.used == False
-    ).delete()
-
-    reset_token = secrets.token_urlsafe(32)
-    expires_at = datetime.utcnow() + timedelta(hours=1)
-
-    db_token = PasswordResetToken(
-        email=request.email,
-        token=reset_token,
-        expires_at=expires_at
-    )
-    db.add(db_token)
-    db.commit()
-
-    await send_password_reset_email(request.email, reset_token)
-
-    return {"message": "If the email exists, a password reset link has been sent."}
 
 
 @router.post("/reset-password")

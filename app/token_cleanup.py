@@ -1,27 +1,22 @@
-# backend/app/token_cleanup.py
-
-from datetime import datetime, timezone
+from datetime import datetime
 from sqlalchemy.orm import Session
 from app.models import RefreshToken, PasswordResetToken
 
 
 def cleanup_tokens(db: Session) -> dict:
-    now = datetime.now(timezone.utc)
-    now_naive = now.replace(tzinfo=None)  # DB가 naive datetime을 사용하므로 변환
+    now = datetime.utcnow()
 
-    # 만료된 Refresh Token 삭제
     expired_refresh = (
         db.query(RefreshToken)
-        .filter(RefreshToken.expires_at < now_naive)
+        .filter(RefreshToken.expires_at < now)
         .delete(synchronize_session=False)
     )
 
-    # 만료되었거나 이미 사용된 Password Reset Token 삭제
     expired_reset = (
         db.query(PasswordResetToken)
         .filter(
-            (PasswordResetToken.expires_at < now_naive) |
-            (PasswordResetToken.used == True)
+            (PasswordResetToken.expires_at < now)
+            | (PasswordResetToken.used == True)
         )
         .delete(synchronize_session=False)
     )

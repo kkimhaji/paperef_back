@@ -45,7 +45,7 @@ class RefSummary(Base):
     id = Column(Integer, primary_key=True, index=True)
     ref_id = Column(Integer, ForeignKey("refs.id", ondelete="CASCADE"), nullable=False)
     content = Column(Text, nullable=False)
-    position = Column(Integer, nullable=False, default=0)  # 0-based ordering
+    position = Column(Integer, nullable=False, default=0)
 
     ref = relationship("Ref", back_populates="ref_summaries")
 
@@ -90,11 +90,7 @@ class Hashtag(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(50), unique=True, index=True, nullable=False)
 
-    refs = relationship("Hashtag" and "Ref", secondary=ref_hashtags, back_populates="hashtags")
-
-
-# Re-declare to fix forward reference
-Hashtag.refs = relationship("Ref", secondary=ref_hashtags, back_populates="hashtags")
+    refs = relationship("Ref", secondary=ref_hashtags, back_populates="hashtags")
 
 
 class Group(Base):
