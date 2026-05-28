@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, subqueryload
 from sqlalchemy import text
 from typing import Optional, List
 
@@ -10,11 +10,8 @@ from app.dependencies import get_current_user
 
 router = APIRouter(redirect_slashes=False)
 
+
 def get_all_descendant_group_ids(db: Session, group_id: int) -> List[int]:
-    """
-    WITH RECURSIVE로 모든 하위 그룹 ID를 단일 쿼리로 수집.
-    기존 재귀 Python 함수 대비 N+1 쿼리 문제 해결.
-    """
     result = db.execute(
         text("""
             WITH RECURSIVE descendants AS (
@@ -31,9 +28,6 @@ def get_all_descendant_group_ids(db: Session, group_id: int) -> List[int]:
 
 
 def count_total_refs_in_tree(db: Session, group_id: int) -> int:
-    """
-    WITH RECURSIVE로 그룹 트리 전체의 레퍼런스 수를 단일 쿼리로 집계.
-    """
     result = db.execute(
         text("""
             WITH RECURSIVE descendants AS (
@@ -51,7 +45,6 @@ def count_total_refs_in_tree(db: Session, group_id: int) -> int:
 
 
 def _get_descendant_ids_excluding_root(db: Session, group_id: int) -> List[int]:
-    """루트를 제외한 하위 그룹 ID 목록 (삭제 시 사용)."""
     result = db.execute(
         text("""
             WITH RECURSIVE descendants AS (
@@ -111,15 +104,20 @@ def get_groups(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    # subqueryload: resolve N+1 caused by len(group.refs) and len(group.children)
+    base_query = (
+        db.query(Group)
+        .options(
+            subqueryload(Group.refs),
+            subqueryload(Group.children),
+        )
+        .filter(Group.user_id == current_user.id)
+    )
+
     if include_nested:
-        groups = db.query(Group).filter(
-            Group.user_id == current_user.id
-        ).order_by(Group.name).all()
+        groups = base_query.order_by(Group.name).all()
     else:
-        groups = db.query(Group).filter(
-            Group.user_id == current_user.id,
-            Group.parent_id == parent_id,
-        ).order_by(Group.name).all()
+        groups = base_query.filter(Group.parent_id == parent_id).order_by(Group.name).all()
 
     return [
         {
@@ -200,14 +198,10 @@ def update_group(
                 status_code=400, detail="A group cannot be its own parent"
             )
         if group_data.parent_id:
-            parent = db.query(Group).filter(
-                Group.id == group_data.parent_id
-            ).first()
+            parent = db.query(Group).filter(Group.id == group_data.parent_id).first()
             if not parent:
                 raise HTTPException(status_code=404, detail="Parent group not found")
 
-            # 자신의 자손을 부모로 설정하는 순환 참조 방지
-            # WITH RECURSIVE로 단일 쿼리 확인
             descendant_ids = get_all_descendant_group_ids(db, group_id)
             if group_data.parent_id in descendant_ids:
                 raise HTTPException(
@@ -216,9 +210,7 @@ def update_group(
 
     if group_data.name and group_data.name != group.name:
         target_parent = (
-            group_data.parent_id
-            if group_data.parent_id is not None
-            else group.parent_id
+            group_data.parent_id if group_data.parent_id is not None else group.parent_id
         )
         existing = db.query(Group).filter(
             Group.user_id == current_user.id,
@@ -282,17 +274,17 @@ def get_group_ref_count(
         raise HTTPException(status_code=404, detail="Group not found")
 
     if include_subgroups:
-        ref_count = count_total_refs_in_tree(db, group_id)  # 단일 쿼리
+        ref_count = count_total_refs_in_tree(db, group_id)
     else:
         ref_count = db.query(Ref).filter(Ref.group_id == group_id).count()
 
     has_subgroups = db.query(Group).filter(Group.parent_id == group_id).count() > 0
 
     return {
-        "ref_count":    ref_count,
+        "ref_count":     ref_count,
         "has_subgroups": has_subgroups,
-        "group_id":     group_id,
-        "group_name":   group.name,
+        "group_id":      group_id,
+        "group_name":    group.name,
     }
 
 
@@ -310,24 +302,15 @@ def delete_group(
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
 
-    # WITH RECURSIVE로 모든 하위 그룹 ID 단일 쿼리 수집
-    all_ids = get_all_descendant_group_ids(db, group_id)  # 루트 포함
+    all_ids = get_all_descendant_group_ids(db, group_id)
 
     if delete_refs:
-        # 해당 그룹 트리의 레퍼런스 일괄 삭제
-        db.query(Ref).filter(Ref.group_id.in_(all_ids)).delete(
-            synchronize_session=False
-        )
+        db.query(Ref).filter(Ref.group_id.in_(all_ids)).delete(synchronize_session=False)
     else:
-        # 레퍼런스를 ungrouped로 이동
         db.query(Ref).filter(Ref.group_id.in_(all_ids)).update(
             {"group_id": None}, synchronize_session=False
         )
 
-    # 하위 그룹 → 루트 순서로 삭제 (FK 제약 준수)
-    # parent_id가 있는 것부터 삭제하면 FK 위반 없음
-    db.query(Group).filter(Group.id.in_(all_ids)).delete(
-        synchronize_session=False
-    )
+    db.query(Group).filter(Group.id.in_(all_ids)).delete(synchronize_session=False)
     db.commit()
     return None

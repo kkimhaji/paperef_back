@@ -1,10 +1,10 @@
 from app.models import User, RefreshToken, PasswordResetToken, Group, Ref, Hashtag
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from datetime import timedelta, datetime, timezone
+from datetime import timedelta, datetime
 from app.email_service import send_password_reset_email
 from app.schemas import (
     UserCreate,
@@ -14,9 +14,11 @@ from app.schemas import (
     PasswordResetRequest,
     PasswordResetConfirm,
     PasswordChangeRequest,
+    DeleteAccountRequest,
     UserStatsResponse,
-    UserUpdate
+    UserUpdate,
 )
+import os
 import secrets
 from app.database import get_db
 from app.auth import (
@@ -29,7 +31,7 @@ from app.auth import (
     revoke_refresh_token,
     revoke_all_user_tokens,
     ACCESS_TOKEN_EXPIRE_MINUTES,
-    REFRESH_TOKEN_EXPIRE_DAYS
+    REFRESH_TOKEN_EXPIRE_DAYS,
 )
 from app.dependencies import get_current_user
 
@@ -38,41 +40,28 @@ router = APIRouter(redirect_slashes=False)
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register(user_data: UserCreate, db: Session = Depends(get_db)):
-    """
-    새로운 사용자 등록
-    """
-    # 이메일 중복 확인
-    db_user = db.query(User).filter(User.email == user_data.email).first()
-    if db_user:
+    if db.query(User).filter(User.email == user_data.email).first():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
+            detail="Email already registered",
         )
-    # 새 사용자 생성
-    hashed_password = get_password_hash(user_data.password)
+
     new_user = User(
         email=user_data.email,
         username=user_data.username,
-        hashed_password=hashed_password
+        hashed_password=get_password_hash(user_data.password),
     )
-
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-
     return new_user
 
 
 @router.post("/token", response_model=Token)
 def login(
-        form_data: OAuth2PasswordRequestForm = Depends(),
-        db: Session = Depends(get_db)
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
 ):
-    """
-    로그인 (JWT Access Token + Refresh Token 발급)
-    - username 필드에 email 또는 username을 입력
-    """
-    # 이메일 또는 사용자명으로 사용자 찾기
     user = db.query(User).filter(
         (User.email == form_data.username) | (User.username == form_data.username)
     ).first()
@@ -84,107 +73,121 @@ def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Access Token 생성 (15분)
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    refresh_token_expires = timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+
     access_token = create_access_token(
         data={"user_id": user.id, "email": user.email},
-        expires_delta=access_token_expires
+        expires_delta=access_token_expires,
     )
-
-    # Refresh Token 생성 (7일)
-    refresh_token_expires = timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     refresh_token = create_refresh_token(
         data={"user_id": user.id},
-        expires_delta=refresh_token_expires
+        expires_delta=refresh_token_expires,
     )
 
-    # Refresh Token을 데이터베이스에 저장
-    expires_at = datetime.utcnow() + refresh_token_expires
-    save_refresh_token(db, user.id, refresh_token, expires_at)
+    save_refresh_token(db, user.id, refresh_token, datetime.utcnow() + refresh_token_expires)
 
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "bearer"
-    }
+    return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
 
 
 @router.post("/refresh", response_model=Token)
 def refresh_access_token(
-        token_request: TokenRefreshRequest,
-        db: Session = Depends(get_db)
+    token_request: TokenRefreshRequest,
+    db: Session = Depends(get_db),
 ):
-    """
-    Refresh Token을 사용하여 새로운 Access Token 발급
-    - Refresh Token도 갱신됨 (Token Rotation)
-    """
-    # Refresh Token 검증
     db_token = verify_refresh_token(db, token_request.refresh_token)
-
-    # 기존 Refresh Token 무효화 (Token Rotation)
     db_token.revoked = True
     db.commit()
 
-    # 새로운 Access Token 생성 (15분)
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    refresh_token_expires = timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+
     new_access_token = create_access_token(
         data={"user_id": db_token.user_id, "email": db_token.owner.email},
-        expires_delta=access_token_expires
+        expires_delta=access_token_expires,
     )
-
-    # 새로운 Refresh Token 생성 (7일)
-    refresh_token_expires = timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     new_refresh_token = create_refresh_token(
         data={"user_id": db_token.user_id},
-        expires_delta=refresh_token_expires
+        expires_delta=refresh_token_expires,
     )
 
-    # 새 Refresh Token을 데이터베이스에 저장
-    expires_at = datetime.utcnow()+ refresh_token_expires
-    save_refresh_token(db, db_token.user_id, new_refresh_token, expires_at)
+    save_refresh_token(
+        db, db_token.user_id, new_refresh_token, datetime.utcnow() + refresh_token_expires
+    )
 
     return {
         "access_token": new_access_token,
         "refresh_token": new_refresh_token,
-        "token_type": "bearer"
+        "token_type": "bearer",
     }
 
 
 @router.post("/logout")
 def logout(
-        token_request: TokenRefreshRequest,
-        current_user: User = Depends(get_current_user),
-        db: Session = Depends(get_db)
+    token_request: TokenRefreshRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    """
-    로그아웃 (Refresh Token 무효화)
-    """
     revoke_refresh_token(db, token_request.refresh_token)
     return {"message": "Successfully logged out"}
 
 
 @router.post("/logout-all")
 def logout_all_devices(
-        current_user: User = Depends(get_current_user),
-        db: Session = Depends(get_db)
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    """
-    모든 기기에서 로그아웃 (사용자의 모든 Refresh Token 무효화)
-    """
     revoke_all_user_tokens(db, current_user.id)
     return {"message": "Successfully logged out from all devices"}
 
 
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: User = Depends(get_current_user)):
-    """현재 로그인한 사용자 정보 조회"""
     return current_user
+
+
+@router.put("/me", response_model=UserResponse)
+async def update_me(
+    user_update: UserUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if user_update.username is not None:
+        new_username = user_update.username.strip()
+        if not new_username:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username cannot be empty",
+            )
+        current_user.username = new_username
+
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_account(
+    request: DeleteAccountRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not verify_password(request.password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Incorrect password",
+        )
+
+    db.query(RefreshToken).filter(RefreshToken.user_id == current_user.id).delete()
+    db.delete(current_user)
+    db.commit()
+    return None
 
 
 @router.get("/me/stats", response_model=UserStatsResponse)
 async def get_user_stats(
-        current_user: User = Depends(get_current_user),
-        db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     total_groups = db.query(Group).filter(Group.user_id == current_user.id).count()
     total_refs = db.query(Ref).filter(Ref.user_id == current_user.id).count()
@@ -207,12 +210,10 @@ async def get_user_stats(
     )
     group_list = [
         {
-            "id": group.id,
-            "name": group.name,
-            "ref_count": len(group.refs),
-            "parent_id": group.parent_id,
-            "created_at": group.created_at,
-            "updated_at": group.updated_at,
+            "id":         group.id,
+            "name":       group.name,
+            "ref_count":  len(group.refs),
+            "parent_id":  group.parent_id,
         }
         for group in groups
     ]
@@ -229,125 +230,54 @@ async def get_user_stats(
     hashtag_list = [{"name": tag.name, "count": tag.count} for tag in hashtag_usage]
 
     return {
-        "total_groups": total_groups,
-        "total_refs": total_refs,
+        "total_groups":   total_groups,
+        "total_refs":     total_refs,
         "total_hashtags": total_hashtags,
-        "groups": group_list,
-        "hashtags": hashtag_list,
+        "groups":         group_list,
+        "hashtags":       hashtag_list,
     }
 
 
-@router.post("/change-password")
-async def change_password(
-        request: PasswordChangeRequest,
-        logout_other_devices: bool = True,  # 쿼리 파라미터
-        current_user: User = Depends(get_current_user),
-        db: Session = Depends(get_db)
+@router.post("/forgot-password")
+async def forgot_password(
+    request: PasswordResetRequest,
+    db: Session = Depends(get_db),
 ):
-    """비밀번호 변경"""
+    user = db.query(User).filter(User.email == request.email).first()
 
-    # 현재 비밀번호 확인
-    if not verify_password(request.current_password, current_user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Current password is incorrect"
-        )
+    # Do not reveal whether the email exists
+    if not user:
+        return {"message": "If the email exists, a password reset link has been sent."}
 
-    # 새 비밀번호와 현재 비밀번호가 같은지 확인
-    if request.current_password == request.new_password:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="New password must be different from current password"
-        )
+    db.query(PasswordResetToken).filter(
+        PasswordResetToken.email == request.email,
+        PasswordResetToken.used == False,
+    ).delete()
 
-    # 비밀번호 업데이트
-    current_user.hashed_password = get_password_hash(request.new_password)
+    reset_token = secrets.token_urlsafe(32)
+    db_token = PasswordResetToken(
+        email=request.email,
+        token=reset_token,
+        expires_at=datetime.utcnow() + timedelta(hours=1),
+    )
+    db.add(db_token)
     db.commit()
 
-    # 사용자 선택에 따라 다른 기기 로그아웃
-    if logout_other_devices:
-        revoke_all_user_tokens(db, current_user.id)
-        return {
-            "message": "Password changed successfully. Other devices have been logged out."
-        }
-    else:
-        return {
-            "message": "Password changed successfully."
-        }
+    await send_password_reset_email(request.email, reset_token)
 
-
-@router.put("/me", response_model=UserResponse)
-async def update_me(
-        user_update: UserUpdate,
-        current_user: User = Depends(get_current_user),
-        db: Session = Depends(get_db),
-):
-    if user_update.username is not None:
-        new_username = user_update.username.strip()
-
-        # 빈 문자열 체크만 (Pydantic에서 이미 1글자 이상 보장)
-        if not new_username:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Username cannot be empty",
-            )
-
-        current_user.username = new_username
-
-    db.commit()
-    db.refresh(current_user)
-    return current_user
-
-
-@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_account(
-        password: str,  # Query parameter로 비밀번호 받기
-        current_user: User = Depends(get_current_user),
-        db: Session = Depends(get_db)
-):
-    """계정 탈퇴 (비밀번호 확인 필요)
-
-    - 모든 레퍼런스 삭제
-    - 모든 그룹 삭제
-    - 모든 토큰 삭제
-    - 사용자 계정 삭제
-    """
-
-    # 비밀번호 확인
-    if not verify_password(password, current_user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Incorrect password"
-        )
-
-    # 모든 리프레시 토큰 삭제
-    db.query(RefreshToken).filter(RefreshToken.user_id == current_user.id).delete()
-
-    # 모든 레퍼런스 삭제 (cascade로 자동 삭제됨)
-    # 모든 그룹 삭제 (cascade로 자동 삭제됨)
-
-    # 사용자 삭제 (cascade로 모든 관련 데이터 삭제)
-    db.delete(current_user)
-    db.commit()
-
-    return None
+    return {"message": "If the email exists, a password reset link has been sent."}
 
 
 @router.post("/reset-password")
 def reset_password(
-        request: PasswordResetConfirm,
-        db: Session = Depends(get_db)
+    request: PasswordResetConfirm,
+    db: Session = Depends(get_db),
 ):
-    """비밀번호 재설정 (토큰 기반)"""
-    # 기존 코드 유지
     token_record = db.query(PasswordResetToken).filter(
         PasswordResetToken.token == request.token
     ).first()
 
-    if not token_record:
-        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
-
-    if not token_record.is_valid():
+    if not token_record or not token_record.is_valid():
         raise HTTPException(status_code=400, detail="Invalid or expired reset token")
 
     user = db.query(User).filter(User.email == token_record.email).first()
@@ -361,12 +291,34 @@ def reset_password(
     return {"message": "Password has been reset successfully"}
 
 
+@router.post("/change-password")
+async def change_password(
+    request: PasswordChangeRequest,
+    logout_other_devices: bool = True,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not verify_password(request.current_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+
+    current_user.hashed_password = get_password_hash(request.new_password)
+    db.commit()
+
+    if logout_other_devices:
+        # exclude_token: keep the current session alive after password change
+        revoke_all_user_tokens(db, current_user.id, exclude_token=request.refresh_token)
+        return {"message": "Password changed successfully. Other devices have been logged out."}
+
+    return {"message": "Password changed successfully."}
+
+
 @router.get("/open-app")
 async def open_app_redirect(token: str):
-    import os
     frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080")
     web_reset_url = f"{frontend_url}/reset-password?token={token}"
-    # host를 "app"으로, path를 "/reset-password"로 명확히 분리
     deep_link_url = f"paperef://app/reset-password?token={token}"
 
     html_content = f"""
@@ -430,29 +382,19 @@ async def open_app_redirect(token: str):
             <div class="icon">🔐</div>
             <h2>Reset Your Password</h2>
             <p id="desc">Trying to open the Paperef app...</p>
-
-            <a href="{deep_link_url}" class="btn" id="openAppBtn">📱 Open in App</a>
+            <a href="{deep_link_url}" class="btn">📱 Open in App</a>
             <a href="{web_reset_url}" class="btn-outline">🌐 Reset on Web</a>
-
             <p class="status" id="statusMsg"></p>
         </div>
-
         <script>
             window.addEventListener('load', function() {{
-                var deepLink = '{deep_link_url}';
-                var webFallback = '{web_reset_url}';
-                var clicked = false;
-
-                // 자동으로 딥링크 시도
-                window.location.href = deepLink;
-
-                // 페이지가 여전히 포커스를 갖고 있으면 앱이 없는 것
+                window.location.href = '{deep_link_url}';
                 setTimeout(function() {{
                     if (!document.hidden) {{
                         document.getElementById('desc').textContent =
                             'App not installed or not responding.';
                         document.getElementById('statusMsg').textContent =
-                            'Use "Reset on Web" if you\'re not using the app.';
+                            'Use "Reset on Web" if you\\'re not using the app.';
                     }}
                 }}, 2500);
             }});
@@ -460,41 +402,4 @@ async def open_app_redirect(token: str):
     </body>
     </html>
     """
-    from fastapi.responses import HTMLResponse
     return HTMLResponse(content=html_content)
-
-
-@router.post("/forgot-password")
-async def forgot_password(
-        request: PasswordResetRequest,
-        db: Session = Depends(get_db),
-):
-    """비밀번호 재설정 요청 - 이메일로 재설정 링크 전송"""
-    user = db.query(User).filter(User.email == request.email).first()
-
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No account found with this email address.",
-        )
-
-    # 기존 미사용 토큰 삭제
-    db.query(PasswordResetToken).filter(
-        PasswordResetToken.email == request.email,
-        PasswordResetToken.used == False,
-    ).delete()
-
-    reset_token = secrets.token_urlsafe(32)
-    expires_at = datetime.utcnow() + timedelta(hours=1)
-
-    db_token = PasswordResetToken(
-        email=request.email,
-        token=reset_token,
-        expires_at=expires_at,
-    )
-    db.add(db_token)
-    db.commit()
-
-    await send_password_reset_email(request.email, reset_token)
-
-    return {"message": "Password reset link has been sent to your email."}

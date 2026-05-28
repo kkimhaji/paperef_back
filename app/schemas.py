@@ -4,7 +4,7 @@ from typing import Optional, List
 from enum import Enum
 
 
-#User
+# User
 class UserBase(BaseModel):
     email:    EmailStr
     username: str = Field(min_length=1, max_length=20)
@@ -24,8 +24,7 @@ class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-#Token
-
+# Token
 class Token(BaseModel):
     access_token:  str
     refresh_token: str
@@ -35,12 +34,11 @@ class TokenRefreshRequest(BaseModel):
     refresh_token: str
 
 class TokenData(BaseModel):
-    user_id:    Optional[int]  = None
-    token_type: Optional[str]  = "access"
+    user_id:    Optional[int] = None
+    token_type: Optional[str] = "access"
 
 
-#Group
-
+# Group
 class GroupBase(BaseModel):
     name:        str            = Field(min_length=1, max_length=255)
     description: Optional[str] = None
@@ -75,8 +73,7 @@ class GroupWithRefCount(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-#Hashtag
-
+# Hashtag
 class HashtagBase(BaseModel):
     name: str = Field(min_length=1, max_length=50)
 
@@ -86,27 +83,26 @@ class HashtagResponse(HashtagBase):
     model_config = ConfigDict(from_attributes=True)
 
 
-#Ref
-
+# Ref
 class RefBase(BaseModel):
-    title:   str            = Field(min_length=1, max_length=255)
+    title:   str           = Field(min_length=1, max_length=255)
     content: Optional[str] = None
 
 class RefCreate(RefBase):
-    summaries: list[str]    = Field(default=[], max_length=3)
+    summaries: list[str]     = Field(default=[], max_length=3)
     group_id:  Optional[int] = None
-    hashtags:  list[str]    = []
+    hashtags:  list[str]     = []
 
     @field_validator("summaries")
     @classmethod
     def max_three_summaries(cls, v: list[str]) -> list[str]:
         if len(v) > 3:
             raise ValueError("Maximum 3 summaries allowed per ref")
-        return [s.strip() for s in v if s.strip()]  # strip & remove blanks
+        return [s.strip() for s in v if s.strip()]
 
 class RefUpdate(BaseModel):
     title:     Optional[str]       = Field(None, min_length=1, max_length=255)
-    summaries: Optional[list[str]] = None   # None = no change, [] = clear all
+    summaries: Optional[list[str]] = None
     content:   Optional[str]       = None
     group_id:  Optional[int]       = None
     hashtags:  Optional[list[str]] = None
@@ -123,9 +119,9 @@ class RefUpdate(BaseModel):
 class RefResponse(RefBase):
     id:         int
     user_id:    int
-    group_id:   Optional[int]  = None
-    group_name: Optional[str]  = None
-    summaries:  list[str]      = []
+    group_id:   Optional[int]      = None
+    group_name: Optional[str]      = None
+    summaries:  list[str]          = []
     created_at: datetime
     updated_at: datetime
     hashtags:   list[HashtagResponse] = []
@@ -135,10 +131,10 @@ class RefResponse(RefBase):
 class RefListResponse(BaseModel):
     id:         int
     title:      str
-    summaries:  list[str]      = []
+    summaries:  list[str]          = []
     user_id:    int
-    group_id:   Optional[int]  = None
-    group_name: Optional[str]  = None
+    group_id:   Optional[int]      = None
+    group_name: Optional[str]      = None
     created_at: datetime
     updated_at: datetime
     hashtags:   list[HashtagResponse] = []
@@ -150,8 +146,8 @@ class RefCursorPageResponse(BaseModel):
     next_cursor: Optional[str] = None
     has_more:    bool
 
-#Password / Account
 
+# Password / Account
 class PasswordResetRequest(BaseModel):
     email: str = Field(pattern=r".+@.+\..+")
 
@@ -160,8 +156,9 @@ class PasswordResetConfirm(BaseModel):
     new_password: str = Field(min_length=8)
 
 class PasswordChangeRequest(BaseModel):
-    current_password: str = Field(..., min_length=8)
-    new_password:     str = Field(..., min_length=8)
+    current_password: str           = Field(..., min_length=8)
+    new_password:     str           = Field(..., min_length=8)
+    refresh_token:    Optional[str] = None  # current session token to exclude from revocation
 
     @field_validator("new_password")
     @classmethod
@@ -170,13 +167,18 @@ class PasswordChangeRequest(BaseModel):
             raise ValueError("New password must be different from current password")
         return v
 
+class DeleteAccountRequest(BaseModel):
+    password: str
+
+
+# Ref sort
 class RefSortBy(str, Enum):
-    CREATED_DESC  = "created_desc"   # 등록 최신순
-    UPDATED_DESC  = "updated_desc"   # 수정 최신순 (기본값)
-    CREATED_ASC   = "created_asc"    # 등록순 (오래된 것부터)
+    CREATED_DESC = "created_desc"
+    UPDATED_DESC = "updated_desc"
+    CREATED_ASC  = "created_asc"
 
-#Stats
 
+# Stats
 class GroupSummary(BaseModel):
     id:        int
     name:      str
@@ -188,8 +190,8 @@ class HashtagSummary(BaseModel):
     count: int
 
 class UserStatsResponse(BaseModel):
-    total_groups:  int
-    total_refs:    int
+    total_groups:   int
+    total_refs:     int
     total_hashtags: int
-    groups:   List[GroupSummary]  = []
+    groups:   List[GroupSummary]   = []
     hashtags: List[HashtagSummary] = []
