@@ -34,6 +34,8 @@ from app.auth import (
     REFRESH_TOKEN_EXPIRE_DAYS,
 )
 from app.dependencies import get_current_user
+from app.main import limiter
+from fastapi import Request
 
 router = APIRouter(redirect_slashes=False)
 
@@ -56,7 +58,7 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
     db.refresh(new_user)
     return new_user
 
-
+@limiter.limit("10/minute")
 @router.post("/token", response_model=Token)
 def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
@@ -237,7 +239,7 @@ async def get_user_stats(
         "hashtags":       hashtag_list,
     }
 
-
+@limiter.limit("3/minute")
 @router.post("/forgot-password")
 async def forgot_password(
     request: PasswordResetRequest,
