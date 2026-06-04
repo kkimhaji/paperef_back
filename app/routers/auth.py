@@ -1,11 +1,15 @@
-from app.models import User, RefreshToken, PasswordResetToken, Group, Ref, Hashtag
+import hmac
+import os
+import re
+import secrets
+from datetime import timedelta, datetime
+from sqlalchemy.orm import Session
+from sqlalchemy import func
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session
-from sqlalchemy import func
-from datetime import timedelta, datetime
-from app.email_service import send_password_reset_email
+
+from app.models import User, RefreshToken, PasswordResetToken, Group, Ref, Hashtag
 from app.schemas import (
     UserCreate,
     UserResponse,
@@ -18,9 +22,8 @@ from app.schemas import (
     UserStatsResponse,
     UserUpdate,
 )
-import os
-import secrets
 from app.database import get_db
+from app.email_service import send_password_reset_email
 from app.auth import (
     get_password_hash,
     verify_password,
@@ -34,10 +37,10 @@ from app.auth import (
     REFRESH_TOKEN_EXPIRE_DAYS,
 )
 from app.dependencies import get_current_user
-from app.main import limiter
-from fastapi import Request
 
 router = APIRouter(redirect_slashes=False)
+
+_SAFE_TOKEN_PATTERN = re.compile(r'^[A-Za-z0-9_\-]{32,}$')
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -59,7 +62,6 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
     return new_user
 
 
-@limiter.limit("10/minute")
 @router.post("/token", response_model=Token)
 def login(
         form_data: OAuth2PasswordRequestForm = Depends(),
@@ -244,7 +246,6 @@ async def get_user_stats(
     }
 
 
-@limiter.limit("3/minute")
 @router.post("/forgot-password")
 async def forgot_password(
         request: PasswordResetRequest,
@@ -280,9 +281,17 @@ def reset_password(
         request: PasswordResetConfirm,
         db: Session = Depends(get_db),
 ):
-    token_record = db.query(PasswordResetToken).filter(
-        PasswordResetToken.token == request.token
-    ).first()
+    # Step 1: email로 미사용 토큰 목록 조회 (DB 필터링)
+    all_tokens = db.query(PasswordResetToken).filter(
+        PasswordResetToken.email == request.email,
+        PasswordResetToken.used == False,
+    ).all()
+
+    # Step 2: 메모리 내에서 hmac.compare_digest로 비교 (타이밍 어택 방지)
+    token_record = next(
+        (t for t in all_tokens if hmac.compare_digest(t.token, request.token)),
+        None,
+    )
 
     if not token_record or not token_record.is_valid():
         raise HTTPException(status_code=400, detail="Invalid or expired reset token")
@@ -315,7 +324,6 @@ async def change_password(
     db.commit()
 
     if logout_other_devices:
-        # exclude_token: keep the current session alive after password change
         revoke_all_user_tokens(db, current_user.id, exclude_token=request.refresh_token)
         return {"message": "Password changed successfully. Other devices have been logged out."}
 
@@ -323,10 +331,16 @@ async def change_password(
 
 
 @router.get("/open-app")
-async def open_app_redirect(token: str):
+async def open_app_redirect(token: str, email: str):
+    # 토큰 형식 검증
+    if not _SAFE_TOKEN_PATTERN.match(token):
+        raise HTTPException(status_code=400, detail="Invalid token format")
+
+    from urllib.parse import urlencode
     frontend_url = os.getenv("FRONTEND_URL", "http://localhost:8080")
-    web_reset_url = f"{frontend_url}/reset-password?token={token}"
-    deep_link_url = f"paperef://app/reset-password?token={token}"
+    params = urlencode({"token": token, "email": email})
+    web_reset_url = f"{frontend_url}/reset-password?{params}"
+    deep_link_url = f"paperef://app/reset-password?{params}"
 
     html_content = f"""
     <!DOCTYPE html>
