@@ -58,11 +58,12 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
     db.refresh(new_user)
     return new_user
 
+
 @limiter.limit("10/minute")
 @router.post("/token", response_model=Token)
 def login(
-    form_data: OAuth2PasswordRequestForm = Depends(),
-    db: Session = Depends(get_db),
+        form_data: OAuth2PasswordRequestForm = Depends(),
+        db: Session = Depends(get_db),
 ):
     user = db.query(User).filter(
         (User.email == form_data.username) | (User.username == form_data.username)
@@ -94,8 +95,8 @@ def login(
 
 @router.post("/refresh", response_model=Token)
 def refresh_access_token(
-    token_request: TokenRefreshRequest,
-    db: Session = Depends(get_db),
+        token_request: TokenRefreshRequest,
+        db: Session = Depends(get_db),
 ):
     db_token = verify_refresh_token(db, token_request.refresh_token)
     db_token.revoked = True
@@ -126,9 +127,9 @@ def refresh_access_token(
 
 @router.post("/logout")
 def logout(
-    token_request: TokenRefreshRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+        token_request: TokenRefreshRequest,
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db),
 ):
     revoke_refresh_token(db, token_request.refresh_token)
     return {"message": "Successfully logged out"}
@@ -136,8 +137,8 @@ def logout(
 
 @router.post("/logout-all")
 def logout_all_devices(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db),
 ):
     revoke_all_user_tokens(db, current_user.id)
     return {"message": "Successfully logged out from all devices"}
@@ -150,9 +151,9 @@ async def get_me(current_user: User = Depends(get_current_user)):
 
 @router.put("/me", response_model=UserResponse)
 async def update_me(
-    user_update: UserUpdate,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+        user_update: UserUpdate,
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db),
 ):
     if user_update.username is not None:
         new_username = user_update.username.strip()
@@ -170,9 +171,9 @@ async def update_me(
 
 @router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_account(
-    request: DeleteAccountRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+        request: DeleteAccountRequest,
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db),
 ):
     if not verify_password(request.password, current_user.hashed_password):
         raise HTTPException(
@@ -180,6 +181,9 @@ async def delete_account(
             detail="Incorrect password",
         )
 
+    db.query(PasswordResetToken).filter(
+        PasswordResetToken.email == current_user.email
+    ).delete()
     db.query(RefreshToken).filter(RefreshToken.user_id == current_user.id).delete()
     db.delete(current_user)
     db.commit()
@@ -188,8 +192,8 @@ async def delete_account(
 
 @router.get("/me/stats", response_model=UserStatsResponse)
 async def get_user_stats(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db),
 ):
     total_groups = db.query(Group).filter(Group.user_id == current_user.id).count()
     total_refs = db.query(Ref).filter(Ref.user_id == current_user.id).count()
@@ -212,10 +216,10 @@ async def get_user_stats(
     )
     group_list = [
         {
-            "id":         group.id,
-            "name":       group.name,
-            "ref_count":  len(group.refs),
-            "parent_id":  group.parent_id,
+            "id": group.id,
+            "name": group.name,
+            "ref_count": len(group.refs),
+            "parent_id": group.parent_id,
         }
         for group in groups
     ]
@@ -232,18 +236,19 @@ async def get_user_stats(
     hashtag_list = [{"name": tag.name, "count": tag.count} for tag in hashtag_usage]
 
     return {
-        "total_groups":   total_groups,
-        "total_refs":     total_refs,
+        "total_groups": total_groups,
+        "total_refs": total_refs,
         "total_hashtags": total_hashtags,
-        "groups":         group_list,
-        "hashtags":       hashtag_list,
+        "groups": group_list,
+        "hashtags": hashtag_list,
     }
+
 
 @limiter.limit("3/minute")
 @router.post("/forgot-password")
 async def forgot_password(
-    request: PasswordResetRequest,
-    db: Session = Depends(get_db),
+        request: PasswordResetRequest,
+        db: Session = Depends(get_db),
 ):
     user = db.query(User).filter(User.email == request.email).first()
 
@@ -272,8 +277,8 @@ async def forgot_password(
 
 @router.post("/reset-password")
 def reset_password(
-    request: PasswordResetConfirm,
-    db: Session = Depends(get_db),
+        request: PasswordResetConfirm,
+        db: Session = Depends(get_db),
 ):
     token_record = db.query(PasswordResetToken).filter(
         PasswordResetToken.token == request.token
@@ -295,10 +300,10 @@ def reset_password(
 
 @router.post("/change-password")
 async def change_password(
-    request: PasswordChangeRequest,
-    logout_other_devices: bool = True,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+        request: PasswordChangeRequest,
+        logout_other_devices: bool = True,
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db),
 ):
     if not verify_password(request.current_password, current_user.hashed_password):
         raise HTTPException(
