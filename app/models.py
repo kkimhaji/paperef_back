@@ -1,8 +1,10 @@
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Table, Boolean
 from sqlalchemy.orm import relationship
-from datetime import datetime
+from datetime import datetime, timezone
 from app.database import Base
 
+def utcnow():
+    return datetime.now(timezone.utc)
 
 ref_hashtags = Table(
     "ref_hashtags",
@@ -19,7 +21,7 @@ class User(Base):
     email = Column(String(255), unique=True, index=True, nullable=False)
     username = Column(String(128), index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
 
     refs = relationship("Ref", back_populates="owner", cascade="all, delete-orphan")
     refresh_tokens = relationship("RefreshToken", back_populates="owner", cascade="all, delete-orphan")
@@ -33,7 +35,7 @@ class RefreshToken(Base):
     token = Column(String(500), unique=True, index=True, nullable=False)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     expires_at = Column(DateTime, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
     revoked = Column(Boolean, default=False)
 
     owner = relationship("User", back_populates="refresh_tokens")
@@ -58,8 +60,8 @@ class Ref(Base):
     content = Column(Text)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     group_id = Column(Integer, ForeignKey("groups.id", ondelete="SET NULL"), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     owner = relationship("User", back_populates="refs")
     group = relationship("Group", back_populates="refs")
@@ -101,8 +103,8 @@ class Group(Base):
     description = Column(Text, nullable=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     parent_id = Column(Integer, ForeignKey("groups.id", ondelete="CASCADE"), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     owner = relationship("User", back_populates="groups")
     refs = relationship("Ref", back_populates="group")
@@ -117,7 +119,7 @@ class PasswordResetToken(Base):
     token = Column(String(500), unique=True, index=True, nullable=False)
     expires_at = Column(DateTime, nullable=False)
     used = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
 
     def is_valid(self) -> bool:
         return not self.used and datetime.utcnow() < self.expires_at

@@ -8,16 +8,12 @@ import os
 import secrets
 from dotenv import load_dotenv
 from app.models import RefreshToken
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
 
 load_dotenv()
-ALGORITHM = "HS256"
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:
     raise RuntimeError("SECRET_KEY environment variable is not set")
-    ALGORITHM = os.getenv("ALGORITHM", "HS256")
+ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 
@@ -84,7 +80,7 @@ def verify_refresh_token(db: Session, token: str) -> RefreshToken:
         if not db_token:
             raise credentials_exception
 
-        if db_token.expires_at < datetime.utcnow():
+        if db_token.expires_at < datetime.now(timezone.utc):
             raise credentials_exception
 
         return db_token
