@@ -1,21 +1,26 @@
-from datetime import datetime, timedelta, timezone
-from typing import Optional
-from jwt import encode, decode, InvalidTokenError
-from pwdlib import PasswordHash
-from fastapi import HTTPException, status
-from sqlalchemy.orm import Session
+import hashlib
 import os
 import secrets
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
 from dotenv import load_dotenv
+from fastapi import HTTPException, status
+from jwt import decode, encode, InvalidTokenError
+from pwdlib import PasswordHash
+from sqlalchemy.orm import Session
+
 from app.models import RefreshToken
 
 load_dotenv()
+
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:
     raise RuntimeError("SECRET_KEY environment variable is not set")
-ALGORITHM = os.getenv("ALGORITHM", "HS256")
+
+ALGORITHM                   = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
-REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+REFRESH_TOKEN_EXPIRE_DAYS   = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 
 password_hash = PasswordHash.recommended()
 
@@ -26,6 +31,11 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def get_password_hash(password: str) -> str:
     return password_hash.hash(password)
+
+
+def hash_token(token: str) -> str:
+    """SHA-256 hash for secure DB storage. The plain token is never stored."""
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
@@ -43,17 +53,24 @@ def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None) 
         expires_delta or timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     )
     to_encode.update({
-        "exp": expire,
+        "exp":        expire,
         "token_type": "refresh",
-        "jti": secrets.token_urlsafe(32),
+        "jti":        secrets.token_urlsafe(32),
     })
     return encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
 def save_refresh_token(
-    db: Session, user_id: int, token: str, expires_at: datetime
+    db: Session,
+    user_id: int,
+    token: str,       # plain token — hashed before storage
+    expires_at: datetime,
 ) -> RefreshToken:
-    db_token = RefreshToken(token=token, user_id=user_id, expires_at=expires_at)
+    db_token = RefreshToken(
+        token=hash_token(token),  # store hash only
+        user_id=user_id,
+        expires_at=expires_at,
+    )
     db.add(db_token)
     db.commit()
     db.refresh(db_token)
@@ -72,15 +89,16 @@ def verify_refresh_token(db: Session, token: str) -> RefreshToken:
         if payload.get("token_type") != "refresh":
             raise credentials_exception
 
+        # DB lookup by hash
         db_token = db.query(RefreshToken).filter(
-            RefreshToken.token == token,
+            RefreshToken.token   == hash_token(token),
             RefreshToken.revoked == False,
         ).first()
 
         if not db_token:
             raise credentials_exception
 
-        if db_token.expires_at < datetime.now(timezone.utc):
+        if db_token.expires_at < datetime.utcnow():
             raise credentials_exception
 
         return db_token
@@ -90,7 +108,9 @@ def verify_refresh_token(db: Session, token: str) -> RefreshToken:
 
 
 def revoke_refresh_token(db: Session, token: str) -> bool:
-    db_token = db.query(RefreshToken).filter(RefreshToken.token == token).first()
+    db_token = db.query(RefreshToken).filter(
+        RefreshToken.token == hash_token(token)
+    ).first()
     if db_token:
         db_token.revoked = True
         db.commit()
@@ -105,13 +125,13 @@ def revoke_all_user_tokens(
 ) -> None:
     """
     Revoke all active refresh tokens for a user.
-    exclude_token: if provided, this token is kept active (current session).
+    exclude_token: plain token — hashed before comparison to exclude current session.
     """
     query = db.query(RefreshToken).filter(
         RefreshToken.user_id == user_id,
         RefreshToken.revoked == False,
     )
     if exclude_token:
-        query = query.filter(RefreshToken.token != exclude_token)
+        query = query.filter(RefreshToken.token != hash_token(exclude_token))
     query.update({"revoked": True})
     db.commit()
