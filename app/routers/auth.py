@@ -227,6 +227,7 @@ async def get_user_stats(
             "name":      group.name,
             "ref_count": len(group.refs),
             "parent_id": group.parent_id,
+            "description": group.description,
         }
         for group in groups
     ]
