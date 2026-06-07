@@ -18,9 +18,9 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:
     raise RuntimeError("SECRET_KEY environment variable is not set")
 
-ALGORITHM                   = os.getenv("ALGORITHM", "HS256")
+ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
-REFRESH_TOKEN_EXPIRE_DAYS   = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 
 password_hash = PasswordHash.recommended()
 
@@ -41,7 +41,7 @@ def hash_token(token: str) -> str:
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + (
-        expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+            expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     to_encode.update({"exp": expire, "token_type": "access"})
     return encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
@@ -50,21 +50,21 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + (
-        expires_delta or timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+            expires_delta or timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     )
     to_encode.update({
-        "exp":        expire,
+        "exp": expire,
         "token_type": "refresh",
-        "jti":        secrets.token_urlsafe(32),
+        "jti": secrets.token_urlsafe(32),
     })
     return encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
 def save_refresh_token(
-    db: Session,
-    user_id: int,
-    token: str,       # plain token — hashed before storage
-    expires_at: datetime,
+        db: Session,
+        user_id: int,
+        token: str,  # plain token — hashed before storage
+        expires_at: datetime,
 ) -> RefreshToken:
     db_token = RefreshToken(
         token=hash_token(token),  # store hash only
@@ -91,7 +91,7 @@ def verify_refresh_token(db: Session, token: str) -> RefreshToken:
 
         # DB lookup by hash
         db_token = db.query(RefreshToken).filter(
-            RefreshToken.token   == hash_token(token),
+            RefreshToken.token == hash_token(token),
             RefreshToken.revoked == False,
         ).first()
 
@@ -119,9 +119,9 @@ def revoke_refresh_token(db: Session, token: str) -> bool:
 
 
 def revoke_all_user_tokens(
-    db: Session,
-    user_id: int,
-    exclude_token: Optional[str] = None,
+        db: Session,
+        user_id: int,
+        exclude_token: Optional[str] = None,
 ) -> None:
     """
     Revoke all active refresh tokens for a user.

@@ -96,9 +96,9 @@ app.add_middleware(
     max_age=3600,
 )
 
-app.include_router(auth.router,     prefix="/auth",     tags=["Authentication"])
-app.include_router(refs.router,     prefix="/refs",     tags=["Refs"])
-app.include_router(groups.router,   prefix="/groups",   tags=["Groups"])
+app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
+app.include_router(refs.router, prefix="/refs", tags=["Refs"])
+app.include_router(groups.router, prefix="/groups", tags=["Groups"])
 app.include_router(hashtags.router, prefix="/hashtags", tags=["Hashtags"])
 
 
