@@ -53,7 +53,7 @@ Flutter Web과 FastAPI 기반으로 개발했으며 AWS 환경에 배포하여 �
 
 # 핵심 설계 포인트
 
-- `updated_at + id` 기반 Cursor Pagination 적용
+- 정렬 기준 컬럼과 id 기반 복합 Cursor Pagination 적용
 - PostgreSQL `WITH RECURSIVE` 기반 계층형 그룹 탐색
 - JWT Access / Refresh Token + Refresh Token Rotation
 - Flutter Web 딥링크 기반 비밀번호 재설정 처리
@@ -69,7 +69,7 @@ Flutter Web과 FastAPI 기반으로 개발했으며 AWS 환경에 배포하여 �
 | **계정 보안** | Refresh Token Rotation, 비밀번호 변경 시 다른 기기 로그아웃 |
 | **계층형 그룹** | 무제한 Depth 하위 그룹 생성 및 Breadcrumb 탐색 |
 | **레퍼런스 CRUD** | 제목, 요약, 본문, 해시태그 기반 레퍼런스 관리 |
-| **검색 & 필터** | 키워드 검색, 해시태그 필터, 해시태그 검색 |
+| **검색 & 필터** | 키워드 검색, 해시태그 필터, 해시태그 자동완성 |
 | **무한 스크롤** | Cursor 기반 페이지네이션 및 점진적 데이터 조회 |
 | **비밀번호 재설정** | 이메일 기반 토큰 인증 및 딥링크 라우팅 지원 |
 
@@ -209,7 +209,7 @@ JWT 기반 인증 구조에 Refresh Token Rotation을 적용하고, Refresh Toke
 
 ## Cursor Pagination 적용
 
-레퍼런스 목록은 `updated_at + id` 기반 Cursor Pagination으로 구현했습니다.
+레퍼런스 목록은 정렬 기준 컬럼과 id 기반의 복합 Cursor Pagination으로 구현했습니다.
 
 Offset 방식에서 발생할 수 있는 중복·누락 문제를 방지하기 위해 복합 커서를 사용했으며, 정렬 기준을 커서에 함께 포함하여 정렬 변경 시 기존 커서를 무효화하도록 구성했습니다.
 
