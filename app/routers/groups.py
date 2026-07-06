@@ -149,35 +149,6 @@ def get_group(
     return group
 
 
-@router.get("/tree")
-def get_groups_tree(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    def build_tree(parent_id: Optional[int] = None):
-        groups = db.query(Group).filter(
-            Group.user_id == current_user.id,
-            Group.parent_id == parent_id,
-        ).order_by(Group.name).all()
-
-        return [
-            {
-                "id":             g.id,
-                "name":           g.name,
-                "description":    g.description,
-                "parent_id":      g.parent_id,
-                "ref_count":      len(g.refs),
-                "children_count": len(g.children),
-                "created_at":     g.created_at.isoformat(),
-                "updated_at":     g.updated_at.isoformat(),
-                "children":       build_tree(g.id),
-            }
-            for g in groups
-        ]
-
-    return build_tree()
-
-
 @router.put("/{group_id}", response_model=GroupResponse)
 def update_group(
     group_id: int,
